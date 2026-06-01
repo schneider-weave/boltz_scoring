@@ -1,4 +1,0 @@
-# .gitattributes
-
-# Treat all text files as text and ensure LF
-* text eol=lf
