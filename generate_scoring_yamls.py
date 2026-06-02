@@ -32,9 +32,7 @@ TARGET_SEQUENCE = (
     "CLVKIITGLLEFEVYLEYLQNRFESSEEQARAVQMSTKVLIQFLQKKAKNLDAITTPDPTTNASLLTKLQAQNQWLQDMTT"
     "HLILRSFKEFLQSSLRALRQM"
 )
-MSA_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "msa_files", f"{TARGET_ID}.a3m")
-)
+MSA_PATH = f"../msa_files/{TARGET_ID}.a3m"
 
 YAML_TEMPLATE = """\
 entities:
