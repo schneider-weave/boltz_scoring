@@ -8,8 +8,9 @@ sys.path.append(NOVA_DIR)
 
 import yaml
 
-import bittensor as bt
+import logging as _logging
 import pandas as pd
+_logger = _logging.getLogger(__name__)
 
 from utils import get_sequence_from_protein_code, seq_hash
 from boltzgen.cli.boltzgen import (
@@ -36,7 +37,7 @@ class BoltzgenWrapper:
         os.makedirs(self.output_dir, exist_ok=True)
 
         self.per_nanobody_components = {}
-        bt.logging.info("BoltzgenWrapper initialized")
+        _logger.info("BoltzgenWrapper initialized")
 
     def _flatten_metrics(self):
         flat = {}
@@ -52,7 +53,6 @@ class BoltzgenWrapper:
         self._run_configure_then_execute()
         results = self._collect_local_results()
         self._populate_per_nanobody_components(results)
-        #bt.logging.debug("run_nanobody_inference: populated per_nanobody_components (ranking deferred)")
         return self.per_nanobody_components
 
     def finalize_ranking_from_components(
@@ -68,9 +68,6 @@ class BoltzgenWrapper:
         ranked = self._rank_metrics_dataframe(df)
         self._inject_category_ranks_into_components(ranked)
         final_boltzgen_scores = self._distribute_scores(ranked)
-        # bt.logging.debug(
-        #     f"finalize_ranking_from_components: final_boltzgen_scores keys={list(final_boltzgen_scores.keys())}"
-        # )
         return final_boltzgen_scores, self.per_nanobody_components
 
     @classmethod
@@ -102,7 +99,7 @@ class BoltzgenWrapper:
                 seq_idx = seq_hash(seq)
                 unique_sequences[seq].append((uid, seq_idx))
 
-        bt.logging.debug(f"Unique sequences: {unique_sequences}")
+        _logger.debug(f"Unique sequences: {unique_sequences}")
         return unique_sequences
 
     def _create_yaml_content(self, design_sequence: str, target_sequence: str, target: str) -> str:
@@ -131,7 +128,7 @@ class BoltzgenWrapper:
 
     def _run_configure_then_execute(self):
         """Run configure and execute commands for Boltzgen."""
-        bt.logging.info(f"Running Boltzgen")
+        _logger.info(f"Running Boltzgen")
 
         parser = build_parser()
 
@@ -198,7 +195,7 @@ class BoltzgenWrapper:
                     if not filtered_results.empty:
                         metrics = filtered_results.iloc[0].to_dict()
                     else:
-                        bt.logging.error(
+                        _logger.error(
                             f"No metrics found for nanobody {seq_idx} and target {target}"
                         )
                         metrics = {}

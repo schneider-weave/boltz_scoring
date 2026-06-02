@@ -56,8 +56,8 @@ from boltzgen.data.write.mmcif import to_mmcif
 from boltzgen.task.task import Task
 from importlib.metadata import PackageNotFoundError, version as pkg_version
 
-# for nova logging
-import bittensor as bt 
+import logging as _logging
+_logger = _logging.getLogger(__name__)
 
 ### Paths and constants ####
 # Get the path to the project root (where main.py and configs/ are located)
@@ -788,9 +788,9 @@ def execute_command(args: argparse.Namespace) -> None:
 
     if not resolved_steps:
         if enabled_steps:
-            bt.logging.error(f"No matching steps found for: {', '.join(enabled_steps)}")
+            _logger.error(f"No matching steps found for: {', '.join(enabled_steps)}")
         else:
-            bt.logging.error(f"No steps found in {steps_yaml_path}")
+            _logger.error(f"No steps found in {steps_yaml_path}")
         return
 
     total_steps = len(resolved_steps)
@@ -1236,7 +1236,7 @@ def expand_design_specs(design_specs: List[Path]) -> List[Path]:
             if not yaml_files:
                 return None
             expanded.extend(yaml_files)
-            bt.logging.debug(f"Found {len(yaml_files)} YAML file(s) in directory: {spec}")
+            _logger.debug(f"Found {len(yaml_files)} YAML file(s) in directory: {spec}")
         elif spec.is_file():
             if spec.suffix not in [".yaml", ".yml"]:
                 return None
