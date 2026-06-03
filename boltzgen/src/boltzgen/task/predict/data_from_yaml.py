@@ -338,7 +338,11 @@ class PredictionDataset(torch.utils.data.Dataset):
 
         for path in self.yaml_paths:
             filename = Path(path).name
-            if re.search(r"_\d+\.yaml$", filename):
+            is_hash_named_nanobody = re.search(
+                r"^nb\d{4}_[0-9a-f]{8}\.yaml$",
+                filename,
+            )
+            if re.search(r"_\d+\.yaml$", filename) and not is_hash_named_nanobody:
                 raise ValueError(
                     f"Illegal YAML filename for '{str(path)}': names must not end with the pattern _\\d+\\.yaml so, e.g., the ends '_001.yaml' or '_4.yaml' are not allowed."
                     "This pattern is reserved for internal file indexing. Sorry :)"

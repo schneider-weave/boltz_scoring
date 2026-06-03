@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 import gzip
 from pathlib import Path
-from typing import Optional, TextIO
+from typing import TYPE_CHECKING, Optional, TextIO
 
 import numpy as np
-from redis import Redis
+
+if TYPE_CHECKING:
+    from redis import Redis
 
 from boltzgen.data import const
 from boltzgen.data.data import MSA, MSADeletion, MSAResidue, MSASequence
@@ -11,7 +15,7 @@ from boltzgen.data.data import MSA, MSADeletion, MSAResidue, MSASequence
 
 def _process_a3m(
     lines: TextIO,
-    taxonomy: Optional[Redis] = None,
+    taxonomy: Optional["Redis"] = None,
     max_seqs: Optional[int] = None,
 ) -> MSA:
     """Process an MSA file.
@@ -105,7 +109,7 @@ def _process_a3m(
 
 def process_a3m(
     path: Path,
-    taxonomy: Optional[Redis] = None,
+    taxonomy: Optional["Redis"] = None,
     max_seqs: Optional[int] = None,
 ) -> MSA:
     """Process an A3M file.

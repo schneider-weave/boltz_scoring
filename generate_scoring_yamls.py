@@ -50,7 +50,7 @@ entities:
 def seq_id(sequence: str, idx: int) -> str:
     """Generate a short deterministic ID from the sequence hash."""
     h = hashlib.md5(sequence.encode()).hexdigest()[:8]
-    return f"nb{idx:04d}_{h}"
+    return f"nb{idx:04d}_h{h}"
 
 
 def _sanitize_id(raw: str) -> str:
