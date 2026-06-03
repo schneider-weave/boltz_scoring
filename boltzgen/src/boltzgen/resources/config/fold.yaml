@@ -24,6 +24,7 @@ data:
     pin_memory: true
     disulfide_prob: 1.0
     disulfide_on: true
+    max_seqs: 256
   design_dir: null
   target_templates: true
   return_native: false

@@ -1,4 +1,5 @@
 import pickle
+import json
 from pathlib import Path
 from typing import Dict, List
 
@@ -414,6 +415,9 @@ class DesignWriter(BasePredictionWriter):
                     binding_type=binding_type[sample["token_pad_mask"].bool()]
                     .cpu()
                     .numpy(),
+                    msa_paths=json.dumps(batch["msa_paths"][0])
+                    if "msa_paths" in batch
+                    else "",
                 )
 
                 # Write trajectories

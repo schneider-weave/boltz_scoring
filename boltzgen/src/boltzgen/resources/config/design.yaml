@@ -13,6 +13,7 @@ data:
     yaml_path: null
     output_dir: ${output}
     diffusion_samples: ${diffusion_samples}
+    max_seqs: 256
 
     # Design
     backbone_only: false

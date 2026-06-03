@@ -10,14 +10,14 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from rdkit.Chem import Mol
 from boltzgen.data import const
-from boltzgen.data.data import Input
+from boltzgen.data.data import Input, MSA, MSADeletion, MSAResidue, MSASequence, Target
 from boltzgen.data.feature.featurizer import Featurizer
 from boltzgen.data.pad import pad_to_max
 from boltzgen.data.mol import load_canonicals, load_molecules
+from boltzgen.data.parse.a3m import process_a3m
 from boltzgen.data.parse.schema import YamlDesignParser
 from boltzgen.data.template.features import load_dummy_templates
 from boltzgen.data.tokenize.tokenizer import Tokenizer
-from boltzgen.data.data import Input
 from boltzgen.data.select.protein import ProteinSelector
 
 
@@ -41,6 +41,7 @@ class DataConfig:
     skip_offset: int = 0
     diffusion_samples: int = 1
     output_dir: Optional[str] = None
+    max_seqs: int = 256
   
    
 
@@ -51,6 +52,193 @@ class Dataset:
     tokenizer: Tokenizer
     featurizer: Featurizer
     multiplicity: int = 1
+    max_seqs: int = 256
+
+
+def _resolve_msa_path(msa_id: Union[str, int], yaml_path: Path) -> Optional[Path]:
+    """Return a concrete custom MSA path, or None for empty/auto MSA modes."""
+    if msa_id in (-1, 0, None, ""):
+        return None
+
+    msa_path = Path(str(msa_id)).expanduser()
+    if not msa_path.is_absolute():
+        msa_path = yaml_path.parent / msa_path
+    return msa_path
+
+
+def _token_ids_to_sequence(token_ids: np.ndarray) -> str:
+    """Convert Boltz token ids to one-letter amino-acid sequence for messages."""
+    return "".join(
+        const.prot_token_to_letter.get(const.tokens[int(token_id)], "X")
+        for token_id in token_ids
+    )
+
+
+def _sequence_to_msa_residues(sequence: str) -> np.ndarray:
+    """Convert a one-letter sequence to MSA residue rows."""
+    token_ids = [
+        const.token_ids[const.prot_letter_to_token.get(letter, "UNK")]
+        for letter in sequence
+    ]
+    return np.array([(token_id,) for token_id in token_ids], dtype=MSAResidue)
+
+
+def _gap_msa_residues(length: int) -> np.ndarray:
+    """Create gap columns for MSA rows that do not cover a YAML prefix."""
+    gap_id = const.token_ids["-"]
+    return np.array([(gap_id,) for _ in range(length)], dtype=MSAResidue)
+
+
+def _left_pad_msa(msa: MSA, prefix: str) -> MSA:
+    """Pad an MSA with leading columns so its query matches a longer target."""
+    prefix_len = len(prefix)
+    if prefix_len == 0:
+        return msa
+
+    new_residue_chunks = []
+    new_deletion_chunks = []
+    new_sequences = []
+    residue_offset = 0
+    deletion_offset = 0
+
+    for seq_pos, sequence in enumerate(msa.sequences):
+        old_residues = msa.residues[sequence["res_start"] : sequence["res_end"]]
+        prefix_residues = (
+            _sequence_to_msa_residues(prefix)
+            if seq_pos == 0
+            else _gap_msa_residues(prefix_len)
+        )
+        residues = np.concatenate([prefix_residues, old_residues])
+        new_residue_chunks.append(residues)
+
+        old_deletions = msa.deletions[sequence["del_start"] : sequence["del_end"]].copy()
+        if len(old_deletions) > 0:
+            old_deletions["res_idx"] += prefix_len
+            new_deletion_chunks.append(old_deletions)
+
+        del_count = len(old_deletions)
+        new_sequences.append(
+            (
+                sequence["seq_idx"],
+                sequence["taxonomy"],
+                residue_offset,
+                residue_offset + len(residues),
+                deletion_offset,
+                deletion_offset + del_count,
+            )
+        )
+        residue_offset += len(residues)
+        deletion_offset += del_count
+
+    return MSA(
+        residues=np.concatenate(new_residue_chunks)
+        if new_residue_chunks
+        else np.array([], dtype=MSAResidue),
+        deletions=np.concatenate(new_deletion_chunks)
+        if new_deletion_chunks
+        else np.array([], dtype=MSADeletion),
+        sequences=np.array(new_sequences, dtype=MSASequence),
+    )
+
+
+def _validate_msa_residue_types(
+    input_residues: np.ndarray,
+    chain_name: str,
+    msa: MSA,
+    msa_path: Path,
+) -> MSA:
+    """Ensure the first MSA row matches the input sequence, padding prefixes if needed."""
+    if len(msa.sequences) == 0:
+        raise ValueError(f"Custom MSA is empty for chain {chain_name}: {msa_path}")
+
+    first = msa.sequences[0]
+    msa_residues = msa.residues[first["res_start"] : first["res_end"]]["res_type"]
+    if len(input_residues) == len(msa_residues) and np.array_equal(
+        input_residues,
+        msa_residues,
+    ):
+        return msa
+
+    input_seq = _token_ids_to_sequence(input_residues)
+    msa_seq = _token_ids_to_sequence(msa_residues)
+    if input_seq.endswith(msa_seq):
+        prefix = input_seq[: -len(msa_seq)]
+        padded = _left_pad_msa(msa, prefix)
+        print(
+            f"Custom MSA for chain {chain_name} is missing {len(prefix)} leading "
+            f"target residues; padded those columns in memory for {msa_path}."
+        )
+        return padded
+
+    raise ValueError(
+        "Custom MSA first sequence must match the YAML protein sequence exactly. "
+        f"Chain={chain_name}, MSA={msa_path}, "
+        f"yaml_len={len(input_seq)}, msa_len={len(msa_seq)}, "
+        f"yaml_start={input_seq[:30]}, msa_start={msa_seq[:30]}"
+    )
+
+
+def load_custom_msa_for_residue_types(
+    input_residues: np.ndarray,
+    chain_name: str,
+    msa_path: Union[Path, str],
+) -> MSA:
+    """Load and validate a custom A3M for a specific structure chain."""
+    msa_path = Path(msa_path).expanduser()
+    if not msa_path.exists():
+        raise FileNotFoundError(
+            f"Custom MSA for chain {chain_name} not found: {msa_path}"
+        )
+    if not (msa_path.name.endswith(".a3m") or msa_path.name.endswith(".a3m.gz")):
+        raise ValueError(
+            f"Unsupported custom MSA format for chain {chain_name}: {msa_path}. "
+            "Expected .a3m or .a3m.gz."
+        )
+
+    msa = process_a3m(msa_path)
+    return _validate_msa_residue_types(input_residues, chain_name, msa, msa_path)
+
+
+def _custom_msa_paths(parsed: Target, yaml_path: Path) -> Dict[int, str]:
+    """Resolve custom MSA paths declared in a YAML design spec."""
+    paths: Dict[int, str] = {}
+    for chain in parsed.record.chains:
+        msa_path = _resolve_msa_path(chain.msa_id, yaml_path)
+        if msa_path is None:
+            continue
+        paths[chain.chain_id] = str(msa_path.resolve())
+    return paths
+
+
+def _load_custom_msas(parsed: Target, yaml_path: Path) -> Dict[int, MSA]:
+    """Load custom A3M MSAs declared in a YAML design spec."""
+    msas: Dict[int, MSA] = {}
+    for chain in parsed.record.chains:
+        msa_path = _resolve_msa_path(chain.msa_id, yaml_path)
+        if msa_path is None:
+            continue
+
+        structure_chain = parsed.structure.chains[
+            parsed.structure.chains["asym_id"] == chain.chain_id
+        ]
+        if len(structure_chain) != 1:
+            raise ValueError(
+                f"Could not resolve structure chain {chain.chain_name} for {msa_path}"
+            )
+        res_start = structure_chain[0]["res_idx"]
+        res_end = res_start + structure_chain[0]["res_num"]
+        input_residues = parsed.structure.residues[res_start:res_end]["res_type"]
+
+        msas[chain.chain_id] = load_custom_msa_for_residue_types(
+            input_residues,
+            chain.chain_name,
+            msa_path,
+        )
+        print(
+            f"Loaded custom MSA for chain {chain.chain_name} "
+            f"from {msa_path} ({len(msas[chain.chain_id].sequences)} sequences)."
+        )
+    return msas
 
 
 def collate(data: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:
@@ -96,6 +284,7 @@ def collate(data: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:
             "structure_bonds",
             "extra_mols",
             "data_sample_idx",
+            "msa_paths",
         ]:
             # Check if all have the same shape
             shape = values[0].shape
@@ -251,8 +440,9 @@ class PredictionDataset(torch.utils.data.Dataset):
             bonds=tokenized.bonds,
             token_to_res=token_to_res,
             structure=structure,
-            msa={},
+            msa=_load_custom_msas(parsed, path),
             templates=None,
+            record=parsed.record,
         )
 
         # Compute features
@@ -261,7 +451,7 @@ class PredictionDataset(torch.utils.data.Dataset):
             molecules=molecules,
             random=np.random.default_rng(None),
             training=False,
-            max_seqs=1,
+            max_seqs=self.dataset.max_seqs,
             backbone_only=self.backbone_only,
             atom14=self.atom14,
             atom37=self.atom37,
@@ -279,6 +469,7 @@ class PredictionDataset(torch.utils.data.Dataset):
 
         # set chain_design_mask
         features["chain_design_mask"] = torch.from_numpy(chain_design_mask)
+        features["msa_paths"] = _custom_msa_paths(parsed, path)
 
         # Compute template features
         templates_features = load_dummy_templates(
@@ -360,6 +551,7 @@ class FromYamlDataModule(pl.LightningDataModule):
             multiplicity=cfg.multiplicity,
             tokenizer=cfg.tokenizer,
             featurizer=cfg.featurizer,
+            max_seqs=cfg.max_seqs,
         )
 
         # Load canonical molecules
@@ -440,6 +632,7 @@ class FromYamlDataModule(pl.LightningDataModule):
                 "structure_bonds",
                 "extra_mols",
                 "data_sample_idx",
+                "msa_paths",
             ]:
                 batch[key] = batch[key].to(device)
         return batch
