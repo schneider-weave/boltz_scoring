@@ -1,5 +1,5 @@
 """
-Generate per-nanobody YAML input files for boltzgen scoring against P05231 (IL-6).
+Generate per-nanobody YAML input files for boltzgen scoring against P20809.
 
 Input file formats supported:
   - FASTA  (.fasta / .fa)  — headers used as IDs, e.g. >design_spec_0673|rank=4
@@ -167,7 +167,7 @@ def generate_yamls(sequences: list[tuple[str, str]], output_dir: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate boltzgen scoring YAML files for nanobody sequences against P05231."
+        description="Generate boltzgen scoring YAML files for nanobody sequences against P20809."
     )
     parser.add_argument(
         "--input", "-i",
