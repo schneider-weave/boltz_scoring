@@ -25,14 +25,17 @@ import csv
 import hashlib
 from pathlib import Path
 
-# ── Target config ──────────────────────────────────────────────────────────────
-TARGET_ID       = "P05231"
+# ── Target config (validator: P20809 IL-11, clip_interval [36, 199]) ────────
+# Full UniProt P20809:
+# MNCVCRLVLVVLSLWPDTAVAPGPPPGPPRVSPDPRAELDSTVLLTRSLLADTRQLAAQLRDKFPADGDHNLDSLPTLAMSAGALGALQLPGVLTRLRADLLSYLRHVQWLRRAGGSSLKTLEPELGTLQARLDRLLRRLQLLMSRLALPQPPPDPPAPPLAPPSSAWGGIRAAHAILGGLHLTLDWAVRGLLLLKTRL
+TARGET_ID = "P20809"
+TARGET_CLIP_INTERVAL = (36, 199)  # 0-based, end exclusive — matches validator config.yaml
 TARGET_SEQUENCE = (
-    "VPPGEDSKDVAAPHRQPLTSSERIDKQIRYILDGISALRKETCNKSNMCESSKEALAENNLNLPKMAEKDGCFQSGFNEET"
-    "CLVKIITGLLEFEVYLEYLQNRFESSEEQARAVQMSTKVLIQFLQKKAKNLDAITTPDPTTNASLLTKLQAQNQWLQDMTT"
-    "HLILRSFKEFLQSSLRALRQM"
+    "AELDSTVLLTRSLLADTRQLAAQLRDKFPADGDHNLDSLPTLAMSAGALGALQLPGVLTRLRADLLSYLRHVQWLRRAGG"
+    "SSLKTLEPELGTLQARLDRLLRRLQLLMSRLALPQPPPDPPAPPLAPPSSAWGGIRAAHAILGGLHLTLDWAVRGLLLLKTRL"
 )
-MSA_PATH = f"../msa_files/{TARGET_ID}.a3m"
+# MSA from https://github.com/metanova-labs/nova/tree/main/data/msa_files
+MSA_PATH = f"../data/msa_files/{TARGET_ID}.a3m"
 
 YAML_TEMPLATE = """\
 entities:
@@ -157,12 +160,17 @@ def generate_yamls(sequences: list[tuple[str, str]], output_dir: str) -> None:
             f.write(content)
 
     print(f"Generated {len(sequences)} YAML files in: {output_dir}")
-    print(f"\nNext step — run boltzgen scoring:")
+    print(f"Target: {TARGET_ID} ({len(TARGET_SEQUENCE)} aa, clip {TARGET_CLIP_INTERVAL})")
+    print(f"MSA: {MSA_PATH}")
+    print(f"\nNext step — run boltzgen scoring (validator-like):")
     print(f"  boltzgen run {output_dir} \\")
     print(f"      --output scoring_results/ \\")
     print(f"      --protocol nanobody-anything \\")
     print(f"      --skip_inverse_folding \\")
-    print(f"      --num_designs 1")
+    print(f"      --num_designs 1 \\")
+    print(f"      --steps design folding analysis \\")
+    print(f"      --step_scale 2.0 \\")
+    print(f"      --noise_scale 0.88")
 
 
 def main():
