@@ -65,20 +65,29 @@ pip install "numpy==${NUMPY_VERSION}"
 ENV_HELPER="${NOVA_DIR}/scripts/scoring_env.sh"
 python3 - <<PY > "${ENV_HELPER}"
 import glob, os, site
-paths = []
-for sp in site.getsitepackages() + [site.getusersitepackages()]:
-    if not sp:
-        continue
-    for pattern in ("cuequivariance_ops*/lib", "nvidia/cublas/lib", "nvidia/nccl/lib"):
-        paths.extend(glob.glob(os.path.join(sp, pattern)))
-paths = list(dict.fromkeys(p for p in paths if os.path.isdir(p)))
+
+def cuda_lib_paths():
+    paths = []
+    for sp in site.getsitepackages() + [site.getusersitepackages()]:
+        if not sp or not os.path.isdir(sp):
+            continue
+        paths.extend(glob.glob(os.path.join(sp, "cuequivariance_ops*", "lib")))
+        paths.extend(glob.glob(os.path.join(sp, "nvidia", "*", "lib")))
+    # libcue_ops.so needs libnvrtc.so.12, libcublas.so.12, etc. from pip nvidia-* wheels
+    return [p for p in dict.fromkeys(paths) if os.path.isdir(p)]
+
+paths = cuda_lib_paths()
 print("# Source before boltzgen: source scripts/scoring_env.sh")
 print("export OMP_NUM_THREADS=1")
 if paths:
     print("export LD_LIBRARY_PATH=" + ":".join(paths) + ':${LD_LIBRARY_PATH:-}')
+else:
+    print("# WARNING: no CUDA/cuequivariance lib dirs found under site-packages")
 PY
 chmod +x "${ENV_HELPER}"
 echo "Wrote ${ENV_HELPER}"
+echo "Library paths:"
+grep LD_LIBRARY_PATH "${ENV_HELPER}" || true
 
 # Step 5: Verify kernel import
 # shellcheck disable=SC1090

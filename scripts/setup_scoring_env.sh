@@ -145,19 +145,17 @@ python3 - <<PY > "${ENV_HELPER}"
 import glob, os, site
 paths = []
 for sp in site.getsitepackages() + [site.getusersitepackages()]:
-    if not sp:
+    if not sp or not os.path.isdir(sp):
         continue
-    for libdir in glob.glob(os.path.join(sp, "cuequivariance_ops*/lib")):
-        paths.append(libdir)
-    for libdir in glob.glob(os.path.join(sp, "nvidia/cublas/lib")):
-        paths.append(libdir)
-paths = list(dict.fromkeys(paths))
+    paths.extend(glob.glob(os.path.join(sp, "cuequivariance_ops*", "lib")))
+    paths.extend(glob.glob(os.path.join(sp, "nvidia", "*", "lib")))
+paths = list(dict.fromkeys(p for p in paths if os.path.isdir(p)))
 print("# Source before boltzgen: source scripts/scoring_env.sh")
 print("export OMP_NUM_THREADS=1")
 if paths:
     print("export LD_LIBRARY_PATH=" + ":".join(paths) + ':${LD_LIBRARY_PATH:-}')
 else:
-    print("# WARNING: cuequivariance lib path not found")
+    print("# WARNING: cuequivariance / nvidia lib paths not found")
 PY
 chmod +x "${ENV_HELPER}"
 echo "Wrote ${ENV_HELPER}"
