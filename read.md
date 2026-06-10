@@ -9,13 +9,33 @@ Do **not** use `scoring_inputs_fixed/` — those YAMLs are outdated (P05231).
 
 ## 1. Environment Setup
 
+On **Vast.ai**, do not use the template's default PyTorch 2.10+cu130 — it breaks NVRTC,
+and repeated `pip install torch` cycles create NCCL/numpy/torchvision conflicts.
+
+Use a **fresh env** and the pinned installer:
+
 ```bash
-conda create -n bg python=3.12
+# Recommended: clean conda env (not polluted /venv/main)
+conda create -n bg python=3.12 -y
 conda activate bg
 
-cd boltzgen
-pip install -e .
-cd ..
+cd /workspace/nova   # or your clone path
+bash scripts/setup_scoring_env.sh
+```
+
+The script installs **torch 2.5.1 + torchvision 0.20.1 (cu124)**, **numpy 2.0.2**,
+and the CUDA libs cuequivariance needs. It verifies `import torch` and a CUDA `det()` before finishing.
+
+If you must reuse `/venv/main`, still run `bash scripts/setup_scoring_env.sh` — it removes
+the broken torch/NCCL stack first.
+
+Manual install (not recommended on Vast):
+
+```bash
+conda create -n bg python=3.12 -y
+conda activate bg
+conda install -c conda-forge rdkit -y
+cd boltzgen && pip install -e . && cd ..
 ```
 
 ## 2. Generate YAML input files from filter_passed.fasta
