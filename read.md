@@ -60,8 +60,15 @@ boltzgen run scoring_inputs/ \
     --num_designs 1 \
     --steps design folding analysis \
     --step_scale 2.0 \
-    --noise_scale 0.88
+    --noise_scale 0.88 \
+    --use_kernels false
 ```
+
+Add `--use_kernels false` if cuEquivariance fails to load (common on Vast after mixed pip installs).
+Slower than GPU kernels but produces the same scores.
+
+Optional: `source scripts/scoring_env.sh` sets `LD_LIBRARY_PATH` for cuEquivariance libs
+if you want `--use_kernels auto` (faster on RTX 3090).
 
 - `--skip_inverse_folding` — sequences are already fixed, skip inverse folding
 - `--num_designs 1` — one structure per input (scoring mode)
