@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Fix cuEquivariance GPU kernels (triangle_multiplicative_update) on Vast.
+# Run when scoring works with --use_kernels false but fails with auto/true.
+#
+# Usage:
+#   source /venv/main/bin/activate   # or: conda activate bg
+#   cd /workspace/nova
+#   bash scripts/fix_cuequivariance_kernels.sh
+
+set -euo pipefail
+
+PYTORCH_INDEX="https://download.pytorch.org/whl/cu124"
+TORCH_VERSION="2.5.1"
+TORCHVISION_VERSION="0.20.1"
+NUMPY_VERSION="2.0.2"
+NOVA_DIR="${NOVA_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+
+CONSTRAINTS="$(mktemp)"
+trap 'rm -f "${CONSTRAINTS}"' EXIT
+cat > "${CONSTRAINTS}" <<EOF
+torch==${TORCH_VERSION}
+torchvision==${TORCHVISION_VERSION}
+numpy==${NUMPY_VERSION}
+EOF
+
+echo "=== Fix cuEquivariance kernels ==="
+
+# Step 1: Reinstall cuequivariance WITH all deps (core package was missing before)
+pip uninstall -y \
+  cuequivariance cuequivariance_torch \
+  cuequivariance_ops_cu12 cuequivariance_ops_torch_cu12 2>/dev/null || true
+
+pip install \
+  "cuequivariance>=0.5.0" \
+  "cuequivariance_torch>=0.5.0" \
+  "cuequivariance_ops_cu12>=0.5.0" \
+  "cuequivariance_ops_torch_cu12>=0.5.0" \
+  -c "${CONSTRAINTS}"
+
+# Step 2: Re-pin torch (cuequivariance can pull torch 2.12 from PyPI without this)
+pip install \
+  "torch==${TORCH_VERSION}" \
+  "torchvision==${TORCHVISION_VERSION}" \
+  --index-url "${PYTORCH_INDEX}" \
+  --force-reinstall --no-deps
+
+# Step 3: CUDA libs — libcue_ops.so needs cublas >= 12.5
+pip install \
+  "nvidia-cublas-cu12>=12.5.0" \
+  "nvidia-cuda-runtime-cu12" \
+  "nvidia-cuda-nvrtc-cu12" \
+  "nvidia-cudnn-cu12" \
+  "nvidia-cufft-cu12" \
+  "nvidia-curand-cu12" \
+  "nvidia-cusolver-cu12" \
+  "nvidia-cusparse-cu12" \
+  "nvidia-nccl-cu12>=2.21.5" \
+  "nvidia-nvjitlink-cu12" \
+  "nvidia-nvtx-cu12" \
+  --no-deps
+
+pip install "numpy==${NUMPY_VERSION}"
+
+# Step 4: Write scoring_env.sh with LD_LIBRARY_PATH for native libs
+ENV_HELPER="${NOVA_DIR}/scripts/scoring_env.sh"
+python3 - <<PY > "${ENV_HELPER}"
+import glob, os, site
+paths = []
+for sp in site.getsitepackages() + [site.getusersitepackages()]:
+    if not sp:
+        continue
+    for pattern in ("cuequivariance_ops*/lib", "nvidia/cublas/lib", "nvidia/nccl/lib"):
+        paths.extend(glob.glob(os.path.join(sp, pattern)))
+paths = list(dict.fromkeys(p for p in paths if os.path.isdir(p)))
+print("# Source before boltzgen: source scripts/scoring_env.sh")
+print("export OMP_NUM_THREADS=1")
+if paths:
+    print("export LD_LIBRARY_PATH=" + ":".join(paths) + ':${LD_LIBRARY_PATH:-}')
+PY
+chmod +x "${ENV_HELPER}"
+echo "Wrote ${ENV_HELPER}"
+
+# Step 5: Verify kernel import
+# shellcheck disable=SC1090
+source "${ENV_HELPER}"
+
+python3 - <<'VERIFY'
+import sys
+import torch
+print("torch:", torch.__version__)
+assert torch.__version__.startswith("2.5.1"), f"wrong torch: {torch.__version__}"
+
+from cuequivariance_torch.primitives.triangle import triangle_multiplicative_update
+print("triangle_multiplicative_update: OK")
+
+x = torch.randn(1, 32, 32, 128, device="cuda")
+mask = torch.ones(1, 32, 32, dtype=torch.bool, device="cuda")
+out = triangle_multiplicative_update(
+    x, direction="outgoing", mask=mask,
+    norm_in_weight=torch.ones(128, device="cuda"),
+    norm_in_bias=torch.zeros(128, device="cuda"),
+    p_in_weight=torch.randn(128, 128, device="cuda"),
+    g_in_weight=torch.randn(128, 128, device="cuda"),
+    norm_out_weight=torch.ones(128, device="cuda"),
+    norm_out_bias=torch.zeros(128, device="cuda"),
+    p_out_weight=torch.randn(128, 128, device="cuda"),
+    g_out_weight=torch.randn(128, 128, device="cuda"),
+)
+print("kernel forward pass: OK", out.shape)
+VERIFY
+
+echo ""
+echo "=== Kernels fixed. Run scoring with: ==="
+echo "  source ${NOVA_DIR}/scripts/scoring_env.sh"
+echo "  boltzgen run scoring_inputs_one/ --output scoring_results/ \\"
+echo "    --protocol nanobody-anything --skip_inverse_folding --num_designs 1 \\"
+echo "    --steps design folding analysis --step_scale 2.0 --noise_scale 0.88 \\"
+echo "    --cache /workspace/cache --use_kernels auto"
