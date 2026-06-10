@@ -100,26 +100,27 @@ source "${ENV_HELPER}"
 python3 - <<'VERIFY'
 import sys
 import torch
+
 print("torch:", torch.__version__)
 assert torch.__version__.startswith("2.5.1"), f"wrong torch: {torch.__version__}"
 
-from cuequivariance_torch.primitives.triangle import triangle_multiplicative_update
-print("triangle_multiplicative_update: OK")
+import triton
+print("triton:", triton.__version__)
 
+# Use boltzgen's own module so weight shapes match the kernel API
+from boltzgen.model.layers.triangular import TriangleMultiplicationOutgoing
+
+m = TriangleMultiplicationOutgoing(dim=128).cuda().eval()
 x = torch.randn(1, 32, 32, 128, device="cuda")
 mask = torch.ones(1, 32, 32, dtype=torch.bool, device="cuda")
-out = triangle_multiplicative_update(
-    x, direction="outgoing", mask=mask,
-    norm_in_weight=torch.ones(128, device="cuda"),
-    norm_in_bias=torch.zeros(128, device="cuda"),
-    p_in_weight=torch.randn(128, 128, device="cuda"),
-    g_in_weight=torch.randn(128, 128, device="cuda"),
-    norm_out_weight=torch.ones(128, device="cuda"),
-    norm_out_bias=torch.zeros(128, device="cuda"),
-    p_out_weight=torch.randn(128, 128, device="cuda"),
-    g_out_weight=torch.randn(128, 128, device="cuda"),
-)
-print("kernel forward pass: OK", out.shape)
+
+with torch.no_grad():
+    out_kernel = m(x, mask, use_kernels=True)
+    out_ref = m(x, mask, use_kernels=False)
+
+print("kernel output shape:", out_kernel.shape)
+print("max |kernel - ref|:", (out_kernel - out_ref).abs().max().item())
+print("kernel forward pass: OK")
 VERIFY
 
 echo ""
