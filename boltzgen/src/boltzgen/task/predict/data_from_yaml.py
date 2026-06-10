@@ -439,12 +439,14 @@ class PredictionDataset(torch.utils.data.Dataset):
         molecules.update(parsed.extra_mols)
 
         # Finalize input data
+        # NOVA: match validator — YAML msa paths are not fed into design featurization.
+        # Design runs single-sequence mode (msa={}, max_seqs=1) even when YAML lists an a3m.
         input_data = Input(
             tokens=tokenized.tokens,
             bonds=tokenized.bonds,
             token_to_res=token_to_res,
             structure=structure,
-            msa=_load_custom_msas(parsed, path),
+            msa={},
             templates=None,
             record=parsed.record,
         )
@@ -455,7 +457,7 @@ class PredictionDataset(torch.utils.data.Dataset):
             molecules=molecules,
             random=np.random.default_rng(None),
             training=False,
-            max_seqs=self.dataset.max_seqs,
+            max_seqs=1,
             backbone_only=self.backbone_only,
             atom14=self.atom14,
             atom37=self.atom37,
@@ -473,7 +475,6 @@ class PredictionDataset(torch.utils.data.Dataset):
 
         # set chain_design_mask
         features["chain_design_mask"] = torch.from_numpy(chain_design_mask)
-        features["msa_paths"] = _custom_msa_paths(parsed, path)
 
         # Compute template features
         templates_features = load_dummy_templates(
