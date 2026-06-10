@@ -53,6 +53,8 @@ install_torch_stack() {
     "nvidia-nvtx-cu12" \
     --no-deps
   pip install "numpy==${NUMPY_VERSION}"
+  # Triton required by cuequivariance kernels; not bundled when torch installed with --no-deps
+  pip install "triton>=3.1.0,<3.3"
 }
 
 assert_torch_version() {
@@ -149,7 +151,7 @@ for sp in site.getsitepackages() + [site.getusersitepackages()]:
         continue
     paths.extend(glob.glob(os.path.join(sp, "cuequivariance_ops*", "lib")))
     paths.extend(glob.glob(os.path.join(sp, "nvidia", "*", "lib")))
-paths = list(dict.fromkeys(p for p in paths if os.path.isdir(p)))
+paths = [p for p in dict.fromkeys(paths) if os.path.isdir(p) and "/nvidia/cu13/" not in p]
 print("# Source before boltzgen: source scripts/scoring_env.sh")
 print("export OMP_NUM_THREADS=1")
 if paths:

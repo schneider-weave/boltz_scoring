@@ -44,7 +44,10 @@ pip install \
   --index-url "${PYTORCH_INDEX}" \
   --force-reinstall --no-deps
 
-# Step 3: CUDA libs — libcue_ops.so needs cublas >= 12.5
+# Triton is required by cuequivariance_ops_torch but omitted when torch uses --no-deps
+pip install "triton>=3.1.0,<3.3"
+
+# Step 3: CUDA libs — libcue_ops.so needs cublas >= 12.5 and nvrtc
 pip install \
   "nvidia-cublas-cu12>=12.5.0" \
   "nvidia-cuda-runtime-cu12" \
@@ -73,8 +76,9 @@ def cuda_lib_paths():
             continue
         paths.extend(glob.glob(os.path.join(sp, "cuequivariance_ops*", "lib")))
         paths.extend(glob.glob(os.path.join(sp, "nvidia", "*", "lib")))
-    # libcue_ops.so needs libnvrtc.so.12, libcublas.so.12, etc. from pip nvidia-* wheels
-    return [p for p in dict.fromkeys(paths) if os.path.isdir(p)]
+    # torch 2.5.1+cu124 — skip cu13 wheels that conflict with cu12 libs
+    paths = [p for p in dict.fromkeys(paths) if os.path.isdir(p) and "/nvidia/cu13/" not in p]
+    return paths
 
 paths = cuda_lib_paths()
 print("# Source before boltzgen: source scripts/scoring_env.sh")
