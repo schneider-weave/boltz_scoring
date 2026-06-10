@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import json
 from pathlib import Path
 import random
 import re
@@ -26,7 +25,6 @@ from boltzgen.data.template.features import (
 )
 from boltzgen.data.parse.schema import parse_redesign_yaml
 from boltzgen.data.tokenize.tokenizer import Tokenizer
-from boltzgen.task.predict.data_from_yaml import load_custom_msa_for_residue_types
 
 
 class DataFetchException(Exception):
@@ -323,21 +321,12 @@ class FromGeneratedDataset(torch.utils.data.Dataset):
         if "binding_type" in metadata:
             binding_type = metadata["binding_type"]
 
-        msa_paths = None
-        if "msa_paths" in metadata:
-            raw_msa_paths = metadata["msa_paths"]
-            if raw_msa_paths.shape == ():
-                raw_msa_paths = raw_msa_paths.item()
-            if raw_msa_paths:
-                msa_paths = json.loads(str(raw_msa_paths))
-
         # Get features
         feat = self.get_feat(
             generated_path,
             design_mask,
             ss_type,
             binding_type,
-            msa_paths=msa_paths,
         )
 
         # Get native features
@@ -358,7 +347,6 @@ class FromGeneratedDataset(torch.utils.data.Dataset):
         design_mask=None,
         ss_type=None,
         binding_type=None,
-        msa_paths=None,
     ):
         # Load design
         if self.extra_mol_dir is not None:
@@ -454,35 +442,13 @@ class FromGeneratedDataset(torch.utils.data.Dataset):
         if self.design:
             tokenized.tokens["design_mask"] = torch.from_numpy(design_mask).bool()
 
-        custom_msas = {}
-        for chain_id_raw, msa_path in (msa_paths or {}).items():
-            chain_id = int(chain_id_raw)
-            structure_chain = structure.chains[structure.chains["asym_id"] == chain_id]
-            if len(structure_chain) != 1:
-                raise DataFetchException(
-                    f"Could not resolve chain {chain_id} for custom MSA {msa_path}"
-                )
-            chain_name = str(structure_chain[0]["name"])
-            res_start = structure_chain[0]["res_idx"]
-            res_end = res_start + structure_chain[0]["res_num"]
-            input_residues = structure.residues[res_start:res_end]["res_type"]
-            custom_msas[chain_id] = load_custom_msa_for_residue_types(
-                input_residues,
-                chain_name,
-                msa_path,
-            )
-            print(
-                f"Loaded custom MSA for generated chain {chain_name} "
-                f"from {msa_path} ({len(custom_msas[chain_id].sequences)} sequences)."
-            )
-
         # Finalize input data
         input_data = Input(
             tokens=tokenized.tokens,
             bonds=tokenized.bonds,
             token_to_res=tokenized.token_to_res,
             structure=structure,
-            msa=custom_msas,
+            msa={},
             templates=None,
         )
 
