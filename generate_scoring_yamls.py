@@ -1,5 +1,5 @@
 """
-Generate per-nanobody YAML input files for boltzgen scoring against P20809.
+Generate per-nanobody YAML input files for boltzgen scoring against P01584.
 
 Input file formats supported:
   - FASTA  (.fasta / .fa)  — headers used as IDs, e.g. >design_spec_0673|rank=4
@@ -25,14 +25,13 @@ import csv
 import hashlib
 from pathlib import Path
 
-# ── Target config (validator: P20809 IL-11, clip_interval [36, 199]) ────────
-# Full UniProt P20809:
-# MNCVCRLVLVVLSLWPDTAVAPGPPPGPPRVSPDPRAELDSTVLLTRSLLADTRQLAAQLRDKFPADGDHNLDSLPTLAMSAGALGALQLPGVLTRLRADLLSYLRHVQWLRRAGGSSLKTLEPELGTLQARLDRLLRRLQLLMSRLALPQPPPDPPAPPLAPPSSAWGGIRAAHAILGGLHLTLDWAVRGLLLLKTRL
-TARGET_ID = "P20809"
-TARGET_CLIP_INTERVAL = (36, 199)  # 0-based, end exclusive — matches validator config.yaml
+# ── Target config (validator: P01584 IL-1 beta, clip_interval [116, 269]) ─────
+# Full UniProt P01584:
+# MAEVPELASEMMAYYSGNEDDLFFEADGPKQMKCSFQDLDLCPLDGGIQLRISDHHYSKGFRQAASVVVAMDKLRKMLVPCPQTFQENDLSTFFPFIFEEEPIFFDTWDNEAYVHDAPVRSLNCTLRDSQQKSLVMSGPYELKALHLQGQDMEQQVVFSMSFVQGEESNDKIPVALGLKEKNLYLSCVLKDDKPTLQLESVDPKNYPKKKMEKRFVFNKIEINNKLEFESAQFPNWYISTSQAENMPVFLGGTKGGQDITDFTMQFVSS
+TARGET_ID = "P01584"
+TARGET_CLIP_INTERVAL = (116, 269)  # 0-based, end exclusive — matches validator config.yaml
 TARGET_SEQUENCE = (
-    "AELDSTVLLTRSLLADTRQLAAQLRDKFPADGDHNLDSLPTLAMSAGALGALQLPGVLTRLRADLLSYLRHVQWLRRAGG"
-    "SSLKTLEPELGTLQARLDRLLRRLQLLMSRLALPQPPPDPPAPPLAPPSSAWGGIRAAHAILGGLHLTLDWAVRGLLLLKTRL"
+    "APVRSLNCTLRDSQQKSLVMSGPYELKALHLQGQDMEQQVVFSMSFVQGEESNDKIPVALGLKEKNLYLSCVLKDDKPTLQLESVDPKNYPKKKMEKRFVFNKIEINNKLEFESAQFPNWYISTSQAENMPVFLGGTKGGQDITDFTMQFVSS"
 )
 # MSA from https://github.com/metanova-labs/nova/tree/main/data/msa_files
 MSA_PATH = f"../data/msa_files/{TARGET_ID}.a3m"
@@ -175,7 +174,7 @@ def generate_yamls(sequences: list[tuple[str, str]], output_dir: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate boltzgen scoring YAML files for nanobody sequences against P20809."
+        description="Generate boltzgen scoring YAML files for nanobody sequences against P01584."
     )
     parser.add_argument(
         "--input", "-i",

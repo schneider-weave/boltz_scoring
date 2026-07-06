@@ -1,9 +1,9 @@
-# Nanobody Scoring against P20809
+# Nanobody Scoring against P01584
 
 Target and MSA match the validator setup in [metanova-labs/nova](https://github.com/metanova-labs/nova):
-- Target: `P20809` (Interleukin-11, human)
-- Clip interval: `[36, 199]` → 163-residue scoring sequence
-- MSA: `data/msa_files/P20809.a3m` from [nova/data/msa_files](https://github.com/metanova-labs/nova/tree/main/data/msa_files)
+- Target: `P01584` (Interleukin-1 beta, human)
+- Clip interval: `[116, 269]` → 153-residue scoring sequence
+- MSA: `data/msa_files/P01584.a3m` from [nova/data/msa_files](https://github.com/metanova-labs/nova/tree/main/data/msa_files)
 
 Do **not** use `scoring_inputs_fixed/` — those YAMLs are outdated (P05231).
 
