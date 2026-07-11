@@ -188,41 +188,96 @@ def count_noncovalents(feat):
         biotite_array, _ = hydride.add_hydrogen(biotite_array)
         hbond = biotite.structure.hbond(biotite_array)
     donor_idxs, acceptor_idxs = hbond[:, 0], hbond[:, 2]
-    donor_design_hbonds = int(
-        (
-            biotite_array.is_design[donor_idxs]
-            & ~biotite_array.is_chain_design[acceptor_idxs]
-        ).sum()
-    )
-    acceptor_design_hbonds = int(
-        (
-            ~biotite_array.is_chain_design[donor_idxs]
-            & biotite_array.is_design[acceptor_idxs]
-        ).sum()
-    )
-    metrics["plip_hbonds"] = donor_design_hbonds + acceptor_design_hbonds
+    hbond_pairs = set()
+    for donor_idx, acceptor_idx in zip(donor_idxs, acceptor_idxs):
+        donor_is_design = bool(biotite_array.is_design[donor_idx])
+        acceptor_is_design = bool(biotite_array.is_design[acceptor_idx])
+        donor_is_target = not bool(biotite_array.is_chain_design[donor_idx])
+        acceptor_is_target = not bool(biotite_array.is_chain_design[acceptor_idx])
+        if not (
+            (donor_is_design and acceptor_is_target)
+            or (acceptor_is_design and donor_is_target)
+        ):
+            continue
+        hbond_pairs.add(
+            tuple(
+                sorted(
+                    [
+                        _residue_key(biotite_array, donor_idx),
+                        _residue_key(biotite_array, acceptor_idx),
+                    ]
+                )
+            )
+        )
+    metrics["plip_hbonds"] = len(hbond_pairs)
 
     # saltbridges
-    pos_atoms = biotite_array[biotite_array.charge > 0]
-    neg_atoms = biotite_array[biotite_array.charge < 0]
-    if len(neg_atoms) > 0 and len(pos_atoms) > 0:
-        pos_neg_distances = torch.cdist(
-            torch.as_tensor(pos_atoms.coord), torch.as_tensor(neg_atoms.coord)
-        )
-        pos_idxs, neg_idxs = torch.where(
-            (pos_neg_distances > 0.5) & (pos_neg_distances < 5.5)
-        )
-        # only keep the ones between design and non design
-        pos_design_sb = int(
-            (pos_atoms.is_design[pos_idxs] & ~neg_atoms.is_chain_design[neg_idxs]).sum()
-        )
-        neg_design_sb = int(
-            (~pos_atoms.is_chain_design[pos_idxs] & neg_atoms.is_design[neg_idxs]).sum()
-        )
-        metrics["plip_saltbridge"] = pos_design_sb + neg_design_sb
+    pos_groups = _charged_residue_groups(biotite_array, charge_sign=1)
+    neg_groups = _charged_residue_groups(biotite_array, charge_sign=-1)
+    if pos_groups and neg_groups:
+        saltbridge_pairs = set()
+        for pos_group in pos_groups:
+            for neg_group in neg_groups:
+                if not _is_interface_pair(pos_group, neg_group):
+                    continue
+                distance = np.linalg.norm(pos_group["center"] - neg_group["center"])
+                if 0.5 < distance < 5.5:
+                    saltbridge_pairs.add(
+                        tuple(sorted([pos_group["key"], neg_group["key"]]))
+                    )
+        metrics["plip_saltbridge"] = len(saltbridge_pairs)
     else:
         metrics["plip_saltbridge"] = 0
     return metrics
+
+
+def _residue_key(atom_array, atom_idx):
+    return (
+        str(atom_array.chain_id[atom_idx]),
+        int(atom_array.res_id[atom_idx]),
+        str(atom_array.res_name[atom_idx]),
+    )
+
+
+def _charged_residue_groups(atom_array, charge_sign):
+    charge_mask = atom_array.charge > 0 if charge_sign > 0 else atom_array.charge < 0
+    groups = {}
+    for atom_idx in np.where(charge_mask)[0]:
+        key = _residue_key(atom_array, atom_idx)
+        group = groups.setdefault(
+            key,
+            {
+                "key": key,
+                "coords": [],
+                "is_design": False,
+                "is_chain_design": False,
+            },
+        )
+        group["coords"].append(atom_array.coord[atom_idx])
+        group["is_design"] = group["is_design"] or bool(atom_array.is_design[atom_idx])
+        group["is_chain_design"] = group["is_chain_design"] or bool(
+            atom_array.is_chain_design[atom_idx]
+        )
+
+    charged_groups = []
+    for group in groups.values():
+        charged_groups.append(
+            {
+                "key": group["key"],
+                "center": np.mean(group["coords"], axis=0),
+                "is_design": group["is_design"],
+                "is_chain_design": group["is_chain_design"],
+            }
+        )
+    return charged_groups
+
+
+def _is_interface_pair(group_a, group_b):
+    return (
+        group_a["is_design"] and not group_b["is_chain_design"]
+    ) or (
+        group_b["is_design"] and not group_a["is_chain_design"]
+    )
 
 
 def tm_score(coords1, coords2):
@@ -643,8 +698,8 @@ def largest_hydrophobic_patch_area(cif_path, distance_cutoff=6.0):
 
 def get_delta_sasa(
     path,
-    atom_target_mask,                
-    atom_design_mask,           
+    atom_target_mask,
+    atom_design_mask,
 ):
     stack = _load_stack(path)
     atoms = stack[0]
@@ -663,7 +718,6 @@ def get_delta_sasa(
         [_radius(rn, an, el) for rn, an, el in zip(res, atm, elem)], dtype=float
     )
 
-    
     bound_mask = atom_design_mask | atom_target_mask
     atoms_bound = atoms[bound_mask]
     radii_bound = radii[bound_mask]
@@ -674,29 +728,27 @@ def get_delta_sasa(
         point_number=960,
         vdw_radii=radii_bound,
     )
-    
-    target_in_bound = atom_target_mask[bound_mask]
-    target_bound    = area_bound[target_in_bound].sum()
-    
-    
 
-    target_atoms = atoms[atom_target_mask]
-    target_res = [r for r, m in zip(res, atom_target_mask) if m]
-    target_atm = [a for a, m in zip(atm, atom_target_mask) if m]
-    target_elem = [e for e, m in zip(elem, atom_target_mask) if m]
+    design_in_bound = atom_design_mask[bound_mask]
+    design_bound = area_bound[design_in_bound].sum()
 
-    radii_lig = np.array(
-        [_radius(rn, an, el) for rn, an, el in zip(target_res, target_atm, target_elem)],
+    design_atoms = atoms[atom_design_mask]
+    design_res = [r for r, m in zip(res, atom_design_mask) if m]
+    design_atm = [a for a, m in zip(atm, atom_design_mask) if m]
+    design_elem = [e for e, m in zip(elem, atom_design_mask) if m]
+
+    radii_design = np.array(
+        [_radius(rn, an, el) for rn, an, el in zip(design_res, design_atm, design_elem)],
         dtype=float,
     )
-    target_area = sasa(
-        target_atoms,
+    design_area = sasa(
+        design_atoms,
         probe_radius=1.4,
         point_number=960,
-        vdw_radii=radii_lig,
+        vdw_radii=radii_design,
     )
-    delta = target_area.sum() - target_bound
-    return delta, target_area.sum(), target_bound
+    delta = design_area.sum() - design_bound
+    return delta, design_area.sum(), design_bound
 
 
 def compute_ss_metrics(dssp_pred, ss_conditioning_metricsed):
