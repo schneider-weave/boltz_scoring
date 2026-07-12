@@ -39,6 +39,7 @@ boltzgen run "${INPUT}" \
   --skip_inverse_folding \
   --validator-parity \
   --num_designs 1 \
+  --steps design folding design_folding analysis \
   --step_scale 2.0 \
   --noise_scale 0.88 \
   --cache "${CACHE}" \

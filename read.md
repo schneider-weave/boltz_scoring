@@ -75,7 +75,7 @@ bash scripts/run_scoring.sh scoring_inputs/ scoring_results/
 | `scoring_results/validator_metrics.csv` | 10 validator metrics + ranks + `rank_sum` |
 | `scoring_results/validator_metrics_long.csv` | One row per metric per design |
 
-The script uses `--validator-parity` (design → folding → design_folding → analysis, no fixed seed). Do **not** pass `--steps design folding analysis` — that skips `design_folding`.
+The script uses `--validator-parity` and `--steps design folding design_folding analysis` (matches NOVA; skips `filtering`).
 
 Manual boltzgen only (no export):
 
@@ -86,6 +86,7 @@ boltzgen run scoring_inputs/ \
     --skip_inverse_folding \
     --validator-parity \
     --num_designs 1 \
+    --steps design folding design_folding analysis \
     --step_scale 2.0 \
     --noise_scale 0.88 \
     --cache /workspace/cache \
