@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import zlib
 from typing import Dict, List, Optional, Union
 
 import numpy as np
@@ -42,6 +43,7 @@ class DataConfig:
     diffusion_samples: int = 1
     output_dir: Optional[str] = None
     max_seqs: int = 256
+    seed: Optional[int] = None
   
    
 
@@ -316,6 +318,7 @@ class PredictionDataset(torch.utils.data.Dataset):
         disulfide_prob: float = 1.0,
         disulfide_on: bool = False,
         skip_offset: int = 0,
+        seed: Optional[int] = None,
     ) -> None:
         """Initialize the training dataset.
 
@@ -371,6 +374,7 @@ class PredictionDataset(torch.utils.data.Dataset):
         self.compute_affinity = compute_affinity
         self.disulfide_prob = disulfide_prob
         self.disulfide_on = disulfide_on
+        self.seed = seed
 
         self.mols = {}
         self.parser = YamlDesignParser(mol_dir=self.moldir)
@@ -385,13 +389,18 @@ class PredictionDataset(torch.utils.data.Dataset):
 
         """
         path = Path(self.yaml_paths[idx % len(self.yaml_paths)])
-        feat = self.get_sample(path)
         data_sample_idx = idx // len(self.yaml_paths) + self.skip_offset
+        feat = self.get_sample(path, seed_key=f"{path}:{data_sample_idx}")
         if self.dataset.multiplicity > 1:
             feat["data_sample_idx"] = data_sample_idx
         return feat
 
-    def get_sample(self, path: Path, sample_id: Optional[str] = None) -> Dict:
+    def get_sample(
+        self,
+        path: Path,
+        sample_id: Optional[str] = None,
+        seed_key: Optional[str] = None,
+    ) -> Dict:
         # Get itemn also needs to take a smaple id as input
         parsed = self.parser.parse_yaml(
             path, mol_dir=self.moldir, mols=self.mols
@@ -405,6 +414,10 @@ class PredictionDataset(torch.utils.data.Dataset):
         # Transfer conditioning information that is stored in tokens
         token_to_res = tokenized.token_to_res
         tokenized.tokens["design_mask"] = design_info.res_design_mask[token_to_res]
+        # NOVA: fixed-sequence scoring YAMLs leave res_design_mask all False; chain B
+        # (nanobody, asym_id==1) must be treated as the design chain for diffusion/confidence.
+        if not tokenized.tokens["design_mask"].astype(bool).any():
+            tokenized.tokens["design_mask"] = tokenized.tokens["asym_id"] == 1
         tokenized.tokens["binding_type"] = design_info.res_binding_type[token_to_res]
         tokenized.tokens["structure_group"] = design_info.res_structure_groups[
             token_to_res
@@ -455,7 +468,7 @@ class PredictionDataset(torch.utils.data.Dataset):
         features = self.dataset.featurizer.process(
             input_data,
             molecules=molecules,
-            random=np.random.default_rng(None),
+            random=self._rng(seed_key or str(path)),
             training=False,
             max_seqs=1,
             backbone_only=self.backbone_only,
@@ -496,6 +509,12 @@ class PredictionDataset(torch.utils.data.Dataset):
             features["tokenized"] = tokenized
 
         return features
+
+    def _rng(self, key: str):
+        if self.seed is None:
+            return np.random.default_rng(None)
+        key_crc = zlib.crc32(key.encode())
+        return np.random.default_rng((self.seed + key_crc) % (2**32))
 
     def __len__(self) -> int:
         """Get the length of the dataset.
@@ -575,6 +594,7 @@ class FromYamlDataModule(pl.LightningDataModule):
             disulfide_prob=cfg.disulfide_prob,
             disulfide_on=cfg.disulfide_on,
             skip_offset=cfg.skip_offset,
+            seed=cfg.seed,
         )
 
     def predict_dataloader(self) -> DataLoader:

@@ -28,6 +28,7 @@ data:
     pin_memory: true
     num_targets: 1000000000
     design_mask_override: null
+    seed: ${seed}
 
   fail_if_no_designs: true
   design_dir: null
@@ -49,6 +50,7 @@ trainer:
 name: if_full
 output: null
 checkpoint: null
+seed: null
 matmul_precision: null
 recycling_steps: 3
 sampling_steps: 200

@@ -169,7 +169,8 @@ def generate_yamls(sequences: list[tuple[str, str]], output_dir: str) -> None:
     print(f"      --num_designs 1 \\")
     print(f"      --steps design folding analysis \\")
     print(f"      --step_scale 2.0 \\")
-    print(f"      --noise_scale 0.88")
+    print(f"      --noise_scale 0.88 \\")
+    print(f"      --seed 0")
 
 
 def main():

@@ -184,6 +184,12 @@ def add_configure_arguments(
         default="auto",
     )
     p.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Random seed for deterministic scoring/generation. Change this for a different deterministic replicate.",
+    )
+    p.add_argument(
         "--moldir",
         type=str,
         help="Path to the moldir. Default: %(default)s",
@@ -939,6 +945,7 @@ class BinderDesignPipeline:
         print(f"Using {devices} devices")
 
         self.steps = []
+        seed_args = [f"seed={args.seed}"]
 
         # Design generation
         output_dir = args.output / "intermediate_designs"
@@ -1000,6 +1007,7 @@ class BinderDesignPipeline:
                         f"checkpoint={get_artifact_path(args, args.inverse_fold_checkpoint)}",
                         f"data.cfg.moldir={moldir}",
                     ]
+                    + seed_args
                     + config_args_by_step.get("inverse_folding", []),
                 )
             )
@@ -1020,6 +1028,7 @@ class BinderDesignPipeline:
                         f"override.use_kernels={use_kernels}",
                         f"data.cfg.moldir={moldir}",
                     ]
+                    + seed_args
                     + design_step_and_noise_scale_args
                     + checkpoint_args
                     + config_args_by_step["design"],
@@ -1067,6 +1076,7 @@ class BinderDesignPipeline:
                             f"trainer.devices={devices}",
                             f"override.inverse_fold_args.inverse_fold_restriction=[{', '.join(exclude_residues)}]",
                         ]
+                        + seed_args
                         + config_args_by_step["inverse_folding"],
                     )
                 )
@@ -1088,6 +1098,7 @@ class BinderDesignPipeline:
                     f"checkpoint={get_artifact_path(args, args.folding_checkpoint)}",
                     f"data.cfg.moldir={moldir}",
                 ]
+                + seed_args
                 + config_args_by_step["folding"],
             )
         )
@@ -1113,6 +1124,7 @@ class BinderDesignPipeline:
                         f"writer.designfolding=True",
                         f"data.cfg.return_designfolding=True",
                     ]
+                    + seed_args
                     + config_args_by_step["design_folding"],
                 )
             )
@@ -1135,6 +1147,7 @@ class BinderDesignPipeline:
                         f"checkpoint={get_artifact_path(args, args.affinity_checkpoint)}",
                         f"data.cfg.moldir={moldir}",
                     ]
+                    + seed_args
                     + config_args_by_step["affinity"],
                 )
             )
@@ -1153,6 +1166,7 @@ class BinderDesignPipeline:
                     f"delta_sasa_original={args.skip_inverse_folding}",
                     f"noncovalents_original={args.skip_inverse_folding}",
                     f"allatom_fold_metrics={args.skip_inverse_folding}",
+                    f"data.cfg.seed={args.seed}",
                 ]
                 + config_args_by_step["analysis"],
             )

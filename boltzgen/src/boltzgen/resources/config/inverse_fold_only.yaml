@@ -18,6 +18,7 @@ data:
     atom37: false
     disulfide_prob: 1.0
     disulfide_on: true
+    seed: ${seed}
   batch_size: 1
   num_workers: 4
   pin_memory: true
@@ -38,6 +39,7 @@ trainer:
 name: inverse_fold_only
 output: null
 checkpoint: null
+seed: null
 matmul_precision: null
 recycling_steps: 3
 sampling_steps: 200

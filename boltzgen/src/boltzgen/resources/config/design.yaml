@@ -13,6 +13,7 @@ data:
     yaml_path: null
     output_dir: ${output}
     diffusion_samples: ${diffusion_samples}
+    seed: ${seed}
 
     # Design
     backbone_only: false
@@ -42,6 +43,7 @@ trainer:
 name: null
 output: null
 checkpoint: null
+seed: null
 matmul_precision: high
 recycling_steps: 3
 sampling_steps: 500

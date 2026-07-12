@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import random
 import re
+import zlib
 from typing import Dict, List, Optional
 from collections import defaultdict
 from rdkit.Chem import Mol
@@ -61,6 +62,7 @@ class DataConfig:
     design_mask_override: Optional[str] = None
     multiplicity: int = 1
     return_designfolding: bool = False
+    seed: Optional[int] = None
 
 
 def collate(data: List[Dict[str, Tensor]]) -> Dict[str, Tensor]:
@@ -214,6 +216,7 @@ class FromGeneratedDataset(torch.utils.data.Dataset):
         use_new_design_mask: bool = False,
         multiplicity: int = 1,
         return_designfolding=False,
+        seed: Optional[int] = None,
     ) -> None:
         """
         Parameters
@@ -251,6 +254,7 @@ class FromGeneratedDataset(torch.utils.data.Dataset):
         self.use_new_design_mask = use_new_design_mask
         self.multiplicity = multiplicity
         self.return_designfolding = return_designfolding
+        self.seed = seed
 
     def __getitem__(self, idx: int) -> Dict:
         """Get an item from the dataset.
@@ -268,16 +272,20 @@ class FromGeneratedDataset(torch.utils.data.Dataset):
                 self.metadata_paths[idx],
                 self.generated_paths[idx],
                 self.native_paths[idx],
+                seed_key=f"{self.generated_paths[idx]}:{data_sample_idx}",
             )
             if self.multiplicity > 1:
                 feat["data_sample_idx"] = data_sample_idx
             return feat
         except DataFetchException:
             idx = random.randint(0, len(self) - 1)
+            fallback_sample_idx = idx // len(self.generated_paths)
+            idx = idx % len(self.generated_paths)
             feat = self.getitem_from_paths(
                 self.metadata_paths[idx],
                 self.generated_paths[idx],
                 self.native_paths[idx],
+                seed_key=f"{self.generated_paths[idx]}:{fallback_sample_idx}",
             )
             if self.multiplicity > 1:
                 feat["data_sample_idx"] = data_sample_idx
@@ -287,9 +295,20 @@ class FromGeneratedDataset(torch.utils.data.Dataset):
         metadata_path = design_dir / f"{sample_id}.npz"
         generated_path = design_dir / f"{sample_id}.cif"
         native_path = design_dir / f"{sample_id}_native.cif"
-        return self.getitem_from_paths(metadata_path, generated_path, native_path)
+        return self.getitem_from_paths(
+            metadata_path,
+            generated_path,
+            native_path,
+            seed_key=sample_id,
+        )
 
-    def getitem_from_paths(self, metadata_path, generated_path, native_path) -> Dict:
+    def getitem_from_paths(
+        self,
+        metadata_path,
+        generated_path,
+        native_path,
+        seed_key: Optional[str] = None,
+    ) -> Dict:
         """Get an item from the dataset.
 
         Returns
@@ -327,14 +346,23 @@ class FromGeneratedDataset(torch.utils.data.Dataset):
             design_mask,
             ss_type,
             binding_type,
+            seed_key=seed_key or str(generated_path),
         )
 
         # Get native features
         if self.return_native:
             if "native_design_mask" in metadata.keys():
-                feat_native = self.get_feat(native_path, metadata["native_design_mask"])
+                feat_native = self.get_feat(
+                    native_path,
+                    metadata["native_design_mask"],
+                    seed_key=f"{seed_key}:native",
+                )
             else:
-                feat_native = self.get_feat(native_path, metadata_design_mask)
+                feat_native = self.get_feat(
+                    native_path,
+                    metadata_design_mask,
+                    seed_key=f"{seed_key}:native",
+                )
 
             for k, v in feat_native.items():
                 feat[f"native_{k}"] = v
@@ -347,6 +375,7 @@ class FromGeneratedDataset(torch.utils.data.Dataset):
         design_mask=None,
         ss_type=None,
         binding_type=None,
+        seed_key: Optional[str] = None,
     ):
         # Load design
         if self.extra_mol_dir is not None:
@@ -457,7 +486,7 @@ class FromGeneratedDataset(torch.utils.data.Dataset):
             features = self.featurizer.process(
                 input_data,
                 molecules=molecules,
-                random=np.random.default_rng(None),
+                random=self._rng(seed_key or str(path)),
                 training=False,
                 max_seqs=self.max_seqs,
                 backbone_only=self.backbone_only,
@@ -536,6 +565,12 @@ class FromGeneratedDataset(torch.utils.data.Dataset):
             features["tokenized"] = tokenized
 
         return features
+
+    def _rng(self, key: str):
+        if self.seed is None:
+            return np.random.default_rng(None)
+        key_crc = zlib.crc32(key.encode())
+        return np.random.default_rng((self.seed + key_crc) % (2**32))
 
     def __len__(self) -> int:
         return len(self.generated_paths) * self.multiplicity
@@ -622,6 +657,7 @@ class FromGeneratedDataModule(pl.LightningDataModule):
                 use_new_design_mask=use_new_design_mask,
                 multiplicity=self.cfg.multiplicity,
                 return_designfolding=self.cfg.return_designfolding,
+                seed=self.cfg.seed,
             )
 
     def init_dataset(
@@ -831,6 +867,7 @@ class FromGeneratedDataModule(pl.LightningDataModule):
             use_new_design_mask=use_new_design_mask,
             multiplicity=self.cfg.multiplicity,
             return_designfolding=self.cfg.return_designfolding,
+            seed=self.cfg.seed,
         )
 
     def predict_dataloader(self) -> DataLoader:

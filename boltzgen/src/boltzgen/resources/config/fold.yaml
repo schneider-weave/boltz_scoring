@@ -25,6 +25,7 @@ data:
     disulfide_prob: 1.0
     disulfide_on: true
     max_seqs: 256
+    seed: ${seed}
   design_dir: null
   target_templates: true
   return_native: false
@@ -46,6 +47,7 @@ trainer:
 name: null
 output: null
 checkpoint: null
+seed: null
 matmul_precision: null
 recycling_steps: 3
 sampling_steps: 200

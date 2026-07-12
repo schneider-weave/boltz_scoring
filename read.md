@@ -61,6 +61,7 @@ boltzgen run scoring_inputs/ \
     --steps design folding analysis \
     --step_scale 2.0 \
     --noise_scale 0.88 \
+    --seed 0 \
     --use_kernels false
 ```
 
@@ -73,7 +74,11 @@ if you want `--use_kernels auto` (faster on RTX 3090).
 - `--skip_inverse_folding` — sequences are already fixed, skip inverse folding
 - `--num_designs 1` — one structure per input (scoring mode)
 - `--step_scale` / `--noise_scale` — match validator `boltzgen_config.yaml`
+- `--seed 0` — deterministic folding (5 diffusion samples; best picked by `0.8*design_to_target_iptm + 0.2*design_ptm`)
 - Models (~6 GB) download automatically to `~/.cache` on first run
+
+Re-run from scratch after code updates: `rm -rf scoring_results/` before scoring.
+Compare validator ranking metrics using `*_refolded` columns (`delta_sasa_refolded`, `plip_hbonds_refolded`, etc.).
 
 ## 4. Results
 

@@ -3,6 +3,7 @@ from boltzgen.utils.quiet import quiet_startup
 quiet_startup()
 
 import os
+import random
 
 # Disable Triton auto-tuning during inference
 os.environ.setdefault("CUEQ_DEFAULT_CONFIG", "1")
@@ -10,6 +11,7 @@ os.environ.setdefault("CUEQ_DISABLE_AOT_TUNING", "1")
 
 from typing import List, Optional, Union
 
+import numpy as np
 import torch
 from omegaconf import OmegaConf, listconfig
 from pytorch_lightning import LightningModule, Trainer
@@ -51,6 +53,7 @@ class Predict(Task):
         compile_pairformer: bool = False,
         compile_structure: bool = False,
         checkpoint_diffusion_conditioning: bool = False,
+        seed: Optional[int] = None,
     ) -> None:
         """Initialize the task.
 
@@ -93,6 +96,7 @@ class Predict(Task):
         self.compile_pairformer = compile_pairformer
         self.compile_structure = compile_structure
         self.checkpoint_diffusion_conditioning = checkpoint_diffusion_conditioning
+        self.seed = seed
 
     def run(self, config: OmegaConf = None, run_prediction=True) -> None:  # noqa: ARG002
         # Silence warnings and pytorch lightning tips
@@ -105,6 +109,13 @@ class Predict(Task):
 
         # Set no grad
         torch.set_grad_enabled(False)
+        if self.seed is not None:
+            random.seed(self.seed)
+            np.random.seed(self.seed)
+            torch.manual_seed(self.seed)
+            torch.cuda.manual_seed_all(self.seed)
+            torch.backends.cudnn.benchmark = False
+            torch.backends.cudnn.deterministic = True
 
         # Experiment with this during training (high or medium)
         if self.matmul_precision is not None:
@@ -113,6 +124,8 @@ class Predict(Task):
         # Create trainer dict
         if self.trainer is None:
             self.trainer = {}
+        if self.seed is not None:
+            self.trainer.setdefault("deterministic", True)
 
         # Flip some arguments in debug mode
         devices = self.trainer.get("devices", 1)
