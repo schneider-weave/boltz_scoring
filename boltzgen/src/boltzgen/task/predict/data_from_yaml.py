@@ -414,17 +414,21 @@ class PredictionDataset(torch.utils.data.Dataset):
         # Transfer conditioning information that is stored in tokens
         token_to_res = tokenized.token_to_res
         tokenized.tokens["design_mask"] = design_info.res_design_mask[token_to_res]
-        # NOVA: fixed-sequence scoring YAMLs leave res_design_mask all False; chain B
-        # (nanobody, asym_id==1) must be treated as the design chain for diffusion/confidence.
-        if not tokenized.tokens["design_mask"].astype(bool).any():
-            tokenized.tokens["design_mask"] = tokenized.tokens["asym_id"] == 1
         tokenized.tokens["binding_type"] = design_info.res_binding_type[token_to_res]
         tokenized.tokens["structure_group"] = design_info.res_structure_groups[
             token_to_res
         ]
 
+        # Fixed-sequence scoring YAMLs leave res_design_mask all False. Do NOT set
+        # token design_mask here — that triggers atom14 sequence re-inference in the
+        # design step (res_from_atom14) and replaces the input nanobody sequence.
+        # Only chain_design_mask marks chain B for interface/confidence bookkeeping.
+        if not tokenized.tokens["design_mask"].astype(bool).any():
+            chain_design_mask = tokenized.tokens["asym_id"] == 1
+        else:
+            chain_design_mask = tokenized.tokens["design_mask"].astype(bool)
+
         # Propagate design mask to obtain chain_design_mask (True whenever something is covalently bound to any residue that is in a chain that contains a design residue).
-        chain_design_mask = tokenized.tokens["design_mask"].astype(bool)
         asym_id = tokenized.tokens["asym_id"]
         while True:
             design_chains = np.unique(asym_id[chain_design_mask])
