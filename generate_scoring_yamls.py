@@ -161,16 +161,15 @@ def generate_yamls(sequences: list[tuple[str, str]], output_dir: str) -> None:
     print(f"Generated {len(sequences)} YAML files in: {output_dir}")
     print(f"Target: {TARGET_ID} ({len(TARGET_SEQUENCE)} aa, clip {TARGET_CLIP_INTERVAL})")
     print(f"MSA: {MSA_PATH}")
-    print(f"\nNext step — run boltzgen scoring (validator-like):")
+    print(f"\nNext step — run boltzgen scoring (validator parity):")
     print(f"  boltzgen run {output_dir} \\")
     print(f"      --output scoring_results/ \\")
     print(f"      --protocol nanobody-anything \\")
     print(f"      --skip_inverse_folding \\")
+    print(f"      --validator-parity \\")
     print(f"      --num_designs 1 \\")
-    print(f"      --steps design folding analysis \\")
     print(f"      --step_scale 2.0 \\")
-    print(f"      --noise_scale 0.88 \\")
-    print(f"      --seed 0")
+    print(f"      --noise_scale 0.88")
 
 
 def main():

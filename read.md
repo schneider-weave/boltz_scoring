@@ -50,20 +50,25 @@ This reads every sequence from `filter_passed.fasta` and writes one YAML file
 per nanobody into `scoring_inputs/`. The FASTA header (e.g. `design_spec_0673|rank=4`)
 becomes the filename: `design_spec_0673_rank_4.yaml`.
 
-## 3. Run boltzgen scoring (validator-like)
+## 3. Run boltzgen scoring (validator parity)
 
 ```bash
+rm -rf scoring_results/
+
 boltzgen run scoring_inputs/ \
     --output scoring_results/ \
     --protocol nanobody-anything \
     --skip_inverse_folding \
+    --validator-parity \
     --num_designs 1 \
-    --steps design folding analysis \
     --step_scale 2.0 \
     --noise_scale 0.88 \
-    --seed 0 \
     --use_kernels false
 ```
+
+`--validator-parity` matches NOVA `boltzgen_config.yaml`: steps `design → folding → design_folding → analysis`, no fixed random seed. Omit `--steps` so configure enables the full pipeline.
+
+For **reproducible** local reruns (not validator-identical), drop `--validator-parity` and add `--seed 0`.
 
 Add `--use_kernels false` if cuEquivariance fails to load (common on Vast after mixed pip installs).
 Slower than GPU kernels but produces the same scores.
@@ -73,12 +78,20 @@ if you want `--use_kernels auto` (faster on RTX 3090).
 
 - `--skip_inverse_folding` — sequences are already fixed, skip inverse folding
 - `--num_designs 1` — one structure per input (scoring mode)
+- `--validator-parity` — same steps and RNG behavior as the NOVA validator
 - `--step_scale` / `--noise_scale` — match validator `boltzgen_config.yaml`
-- `--seed 0` — deterministic folding (5 diffusion samples; best picked by `0.8*design_to_target_iptm + 0.2*design_ptm`)
 - Models (~6 GB) download automatically to `~/.cache` on first run
 
-Re-run from scratch after code updates: `rm -rf scoring_results/` before scoring.
-Compare validator ranking metrics using `*_refolded` columns (`delta_sasa_refolded`, `plip_hbonds_refolded`, etc.).
+Compare only **validator ranking columns** from the CSV:
+
+| Validator metric | CSV column |
+|---|---|
+| binding SASA | `delta_sasa_refolded` |
+| H-bonds | `plip_hbonds_refolded` |
+| salt bridges | `plip_saltbridge_refolded` |
+| interface confidence | `design_to_target_iptm`, `design_iiptm`, `design_ptm`, `interaction_pae` |
+
+Do **not** use `*_original` or unsuffixed `plip_hbonds` for validator comparison.
 
 ## 4. Results
 

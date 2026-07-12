@@ -255,6 +255,13 @@ def add_configure_arguments(
         help="Skip inverse folding step",
     )
     p.add_argument(
+        "--validator-parity",
+        action="store_true",
+        help="Match NOVA validator scoring: run design_folding and do not fix the random "
+        "seed (see config/boltzgen_config.yaml execute_steps). Use with --skip_inverse_folding "
+        "for fixed-sequence nanobody scoring.",
+    )
+    p.add_argument(
         "--inverse_fold_num_sequences",
         type=int,
         help="Number of sequences per backbone to generate in the inverse fold step. Default: %(default)s",
@@ -945,7 +952,8 @@ class BinderDesignPipeline:
         print(f"Using {devices} devices")
 
         self.steps = []
-        seed_args = [f"seed={args.seed}"]
+        validator_parity = getattr(args, "validator_parity", False)
+        seed_args = [] if validator_parity else [f"seed={args.seed}"]
 
         # Design generation
         output_dir = args.output / "intermediate_designs"
@@ -1105,7 +1113,10 @@ class BinderDesignPipeline:
 
         # Design folding
         input_dir = output_dir
-        do_design_folding = protocol in ["protein-anything", "protein-small_molecule"]
+        do_design_folding = protocol in [
+            "protein-anything",
+            "protein-small_molecule",
+        ] or validator_parity
         if do_design_folding:
             self.steps.append(
                 PipelineStep(
@@ -1166,8 +1177,12 @@ class BinderDesignPipeline:
                     f"delta_sasa_original={args.skip_inverse_folding}",
                     f"noncovalents_original={args.skip_inverse_folding}",
                     f"allatom_fold_metrics={args.skip_inverse_folding}",
-                    f"data.cfg.seed={args.seed}",
                 ]
+                + (
+                    ["data.cfg.seed=null"]
+                    if validator_parity
+                    else [f"data.cfg.seed={args.seed}"]
+                )
                 + config_args_by_step["analysis"],
             )
         )
