@@ -50,11 +50,36 @@ This reads every sequence from `filter_passed.fasta` and writes one YAML file
 per nanobody into `scoring_inputs/`. The FASTA header (e.g. `design_spec_0673|rank=4`)
 becomes the filename: `design_spec_0673_rank_4.yaml`.
 
-## 3. Run boltzgen scoring (validator parity)
+## 3. Run full scoring pipeline (validator parity + export)
+
+One command runs boltzgen and writes `validator_metrics.csv` automatically:
 
 ```bash
 rm -rf scoring_results/
 
+CACHE=/workspace/cache bash scripts/run_scoring.sh scoring_inputs/ scoring_results/
+```
+
+Or with explicit thread limits (recommended on shared GPUs):
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
+CACHE=/workspace/cache \
+bash scripts/run_scoring.sh scoring_inputs/ scoring_results/
+```
+
+**Outputs:**
+| File | Contents |
+|---|---|
+| `scoring_results/intermediate_designs/aggregate_metrics_analyze.csv` | Full boltzgen metrics |
+| `scoring_results/validator_metrics.csv` | 10 validator metrics + ranks + `rank_sum` |
+| `scoring_results/validator_metrics_long.csv` | One row per metric per design |
+
+The script uses `--validator-parity` (design → folding → design_folding → analysis, no fixed seed). Do **not** pass `--steps design folding analysis` — that skips `design_folding`.
+
+Manual boltzgen only (no export):
+
+```bash
 boltzgen run scoring_inputs/ \
     --output scoring_results/ \
     --protocol nanobody-anything \
@@ -63,35 +88,9 @@ boltzgen run scoring_inputs/ \
     --num_designs 1 \
     --step_scale 2.0 \
     --noise_scale 0.88 \
+    --cache /workspace/cache \
     --use_kernels false
 ```
-
-`--validator-parity` matches NOVA `boltzgen_config.yaml`: steps `design → folding → design_folding → analysis`, no fixed random seed. Omit `--steps` so configure enables the full pipeline.
-
-For **reproducible** local reruns (not validator-identical), drop `--validator-parity` and add `--seed 0`.
-
-Add `--use_kernels false` if cuEquivariance fails to load (common on Vast after mixed pip installs).
-Slower than GPU kernels but produces the same scores.
-
-Optional: `source scripts/scoring_env.sh` sets `LD_LIBRARY_PATH` for cuEquivariance libs
-if you want `--use_kernels auto` (faster on RTX 3090).
-
-- `--skip_inverse_folding` — sequences are already fixed, skip inverse folding
-- `--num_designs 1` — one structure per input (scoring mode)
-- `--validator-parity` — same steps and RNG behavior as the NOVA validator
-- `--step_scale` / `--noise_scale` — match validator `boltzgen_config.yaml`
-- Models (~6 GB) download automatically to `~/.cache` on first run
-
-Compare only **validator ranking columns** from the CSV:
-
-| Validator metric | CSV column |
-|---|---|
-| binding SASA | `delta_sasa_refolded` |
-| H-bonds | `plip_hbonds_refolded` |
-| salt bridges | `plip_saltbridge_refolded` |
-| interface confidence | `design_to_target_iptm`, `design_iiptm`, `design_ptm`, `interaction_pae` |
-
-Physical binding metrics in `analyze_utils.py` match NOVA's vendored boltzgen (target-chain SASA, atom-level plip counts). Do **not** use `*_original` or unsuffixed `plip_hbonds` for validator comparison.
 
 ## 4. Results
 
