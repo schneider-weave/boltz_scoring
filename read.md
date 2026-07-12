@@ -91,7 +91,7 @@ Compare only **validator ranking columns** from the CSV:
 | salt bridges | `plip_saltbridge_refolded` |
 | interface confidence | `design_to_target_iptm`, `design_iiptm`, `design_ptm`, `interaction_pae` |
 
-Do **not** use `*_original` or unsuffixed `plip_hbonds` for validator comparison.
+Physical binding metrics in `analyze_utils.py` match NOVA's vendored boltzgen (target-chain SASA, atom-level plip counts). Do **not** use `*_original` or unsuffixed `plip_hbonds` for validator comparison.
 
 ## 4. Results
 
