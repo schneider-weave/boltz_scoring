@@ -257,9 +257,10 @@ def add_configure_arguments(
     p.add_argument(
         "--validator-parity",
         action="store_true",
-        help="Match NOVA validator scoring: run design_folding and do not fix the random "
-        "seed (see config/boltzgen_config.yaml execute_steps). Use with --skip_inverse_folding "
-        "for fixed-sequence nanobody scoring.",
+        help="Match NOVA validator scoring: do not fix the random seed. Does NOT enable "
+        "design_folding -- nova lists it in boltzgen_config.yaml execute_steps, but that only "
+        "selects among configured steps and the pipeline never configures it for "
+        "nanobody-anything. Use with --skip_inverse_folding for fixed-sequence nanobody scoring.",
     )
     p.add_argument(
         "--inverse_fold_num_sequences",
@@ -1113,10 +1114,13 @@ class BinderDesignPipeline:
 
         # Design folding
         input_dir = output_dir
+        # Must stay gated on protocol alone, matching nova's copy of this file.
+        # nanobody-anything never runs design_folding, so this also keeps
+        # designfolding_metrics/filter_designfolding False for that protocol.
         do_design_folding = protocol in [
             "protein-anything",
             "protein-small_molecule",
-        ] or validator_parity
+        ]
         if do_design_folding:
             self.steps.append(
                 PipelineStep(

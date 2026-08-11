@@ -1,8 +1,18 @@
+# Reference example only — generate_scoring_yamls.py writes the real inputs
+# with absolute paths. Mirrors nova's _create_yaml_content on branch
+# inference-rework-and-structure-files.
 entities:
-- protein:
-    id: A
-    sequence: "PPGEDSKDVAAPHRQPLTSSERIDKQIRYILDGISALRKETCNKSNMCESSKEALAENNLNLPKMAEKDGCFQSGFNEETCLVKIITGLLEFEVYLEYLQNRFESSEEQARAVQMSTKVLIQFLQKKAKNLDAITTPDPTTNASLLTKLQAQNQWLQDMTTHLILRSFKEFLQSSLRALRQM"
-    msa: ../data/msa_files/P05231.a3m
+- file:
+    path: data/structures/4O9H.cif
+    include:
+        - chain:
+            id: A
+            res_index: 21..186
+            msa: data/msa_files/P05231.a3m
+    binding_types:
+        - chain:
+            id: A
+            binding: 24,77,80,82,131,184..186
 - protein:
     id: B
     sequence: "YOUR_NANOBODY_SEQUENCE_HERE"

@@ -1,9 +1,65 @@
 # Nanobody Scoring against P05231
 
-Target and MSA match the validator setup in [metanova-labs/nova](https://github.com/metanova-labs/nova):
-- Target: `P05231` (Interleukin-6, human)
-- Clip interval: `[30, 212]` → 182-residue scoring sequence
-- MSA: `data/msa_files/P05231.a3m` from [nova/data/msa_files](https://github.com/metanova-labs/nova/tree/main/data/msa_files)
+Target setup matches the validator in [metanova-labs/nova](https://github.com/metanova-labs/nova)
+(branch `inference-rework-and-structure-files`):
+
+- Target: `P05231` (Interleukin-6, human), clip interval `[27, 212]`
+- **Structure: `data/structures/4O9H.cif`, chain `A`, `res_index: 21..186`**
+- **Epitope: `binding: 24,77,80,82,131,184..186`**
+- MSA: `data/msa_files/P05231.a3m`
+
+## The target is a structure now, not a sequence
+
+The validator no longer passes IL-6 as a bare sequence. It passes **experimental
+coordinates plus an explicit epitope**:
+
+```yaml
+entities:
+- file:
+    path: data/structures/4O9H.cif
+    include:
+        - chain:
+            id: A
+            res_index: 21..186
+            msa: data/msa_files/P05231.a3m
+    binding_types:
+        - chain:
+            id: A
+            binding: 24,77,80,82,131,184..186
+- protein:
+    id: B
+    sequence: "<design>"
+    msa: empty
+```
+
+(`generate_scoring_yamls.py` writes this with absolute paths.)
+
+Two consequences:
+
+1. **boltzgen no longer folds IL-6** — it docks against the 4O9H backbone.
+2. **`binding_types` pins where the nanobody binds.** Previously nothing did, so
+   the diffusion sampler chose a different epitope on every draw. That produced
+   swings of ~0.3 in `design_to_target_iptm` on *identical* input, which is what
+   made local scores look unrelated to the validator's.
+
+4O9H is IL-6 bound to an antibody Fab (chain A is IL-6; H/L are the Fab). The
+listed residues are that antibody's epitope — designs are judged on hitting
+**that** site, so designs screened before this change are not comparable.
+
+> **Use nova's exact CIF.** `res_index` and `binding` are 1-based *positional*
+> indices into the parsed chain (`boltzgen/data/parse/schema.py::parse_range`),
+> **not** PDB author numbering. 4O9H entity 1 has exactly 186 SEQRES residues, so
+> `21..186` is its last 166. A different copy of the structure shifts every index
+> and silently targets the wrong site.
+>
+> ```bash
+> mkdir -p data/structures
+> curl -sSL -o data/structures/4O9H.cif \
+>   https://raw.githubusercontent.com/metanova-labs/nova/inference-rework-and-structure-files/data/structures/4O9H.cif
+> ```
+
+Note the `.a3m` is carried for parity only: both this pipeline and the validator
+build `Input(msa={})`, so the MSA never reaches the model and cannot move scores.
 
 Regenerate scoring inputs after every target change; previously generated YAMLs retain the old target.
 
@@ -39,6 +95,10 @@ cd boltzgen && pip install -e . && cd ..
 ```
 
 ## 2. Generate YAML input files from filter_passed.fasta
+
+Requires `data/structures/4O9H.cif` to be present (see the curl command at the top);
+the generator refuses to run without it, since a missing structure now means no
+target at all rather than an unused file.
 
 ```bash
 python generate_scoring_yamls.py \
@@ -130,8 +190,12 @@ inputs work the same way if you ever need them.
 
 Submit the top row of `final_results/validator_metrics.csv` (lowest `rank_sum`).
 
-Keep 30–50% of the screened designs. Cutting a 50-design batch to the top 10%
-retains only ~32% of the truly-best designs; keeping 40–50% retains 75–83%.
+Keep about half the screened designs. (Earlier guidance here quoted specific
+retention rates — ~32% for a top-10% cut, 75–83% for a 40–50% cut — derived from
+the same discredited scatter estimate as §3b; they are removed, not restated.)
+Stage 1 runs one replicate per sequence, so its ranking is a single noisy draw:
+cut conservatively, and re-screen at `NUM_DESIGNS=3` if the `_sd` columns from
+stage 2 show the spread is still wide.
 
 `rm -rf finalists/` matters: boltzgen scores **every** YAML in the input
 directory, so leftovers from a previous round would be scored again.
@@ -143,18 +207,32 @@ stage-2 row back to its stage-1 row.
 Run stage 2 as **one batch on one device**: `rank_sum` is relative to whichever
 designs share the CSV, so it cannot be compared across separate runs or devices.
 
-## 3b. Why 3 replicates
+## 3b. How many replicates
 
 The design and folding steps are diffusion samplers, so each run draws a different
-structure. Measured single-run scatter is as large as the real spread between similar
-designs (`design_iiptm` ±0.015, `plip_hbonds` ±3, `delta_sasa_refolded` ±46), which is
-why one run cannot order near-identical sequences. Scoring 3× and ranking the median
-raises the chance of picking the true best design from ~55% to ~69%, and puts it in the
-local top 3 about 99% of the time.
+structure and one run cannot order near-identical sequences.
+
+**Re-measure the spread before choosing a replicate count.** An earlier version of
+this file quoted `design_iiptm ±0.015` and claimed 3 replicates lift the chance of
+picking the true best design from ~55% to ~69%. That scatter figure was measured
+before the epitope was pinned and proved to be roughly 10× too small — one observed
+pair of replicates on identical input differed by 0.29 in `design_to_target_iptm`.
+Every probability derived from it is unreliable; the numbers have been removed
+rather than restated.
+
+Pinning the epitope (see the top of this file) removes the dominant source of that
+variance, so the spread should now be far smaller — but it has not been measured
+under the new spec. Run stage 2 at `NUM_DESIGNS=3`, look at the `_sd` columns, and
+only raise the count if the spread is still comparable to the gaps you are trying
+to resolve.
 
 Read `validator_metrics.csv` as: **lowest `rank_sum` wins**, but two designs differ
 meaningfully only when a metric gap exceeds roughly 3× its `_sd` column. Treat the top
 few as a tied group rather than a strict ordering.
+
+Note the validator scores each sequence **once**. No replicate count reproduces its
+specific number — replicates estimate the centre of the distribution it draws from,
+which is the most you can optimise for.
 
 ## 4. Results
 
