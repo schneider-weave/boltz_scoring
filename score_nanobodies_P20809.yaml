@@ -1,18 +1,18 @@
 # Reference example only — generate_scoring_yamls.py writes the real inputs
 # with absolute paths. Mirrors nova's _create_yaml_content on branch
-# inference-rework-and-structure-files.
+# atom-pair-entropy.
 entities:
 - file:
-    path: data/structures/4O9H.cif
+    path: data/structures/6O4O.cif
     include:
         - chain:
             id: A
-            res_index: 21..186
-            msa: data/msa_files/P05231.a3m
+            res_index: 2..169
+            msa: data/msa_files/P20809.a3m
     binding_types:
         - chain:
             id: A
-            binding: 24,77,80,82,131,184..186
+            binding: 31..35,37..38,40,88,135..138,142
 - protein:
     id: B
     sequence: "YOUR_NANOBODY_SEQUENCE_HERE"

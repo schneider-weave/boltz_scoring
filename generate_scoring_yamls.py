@@ -1,5 +1,5 @@
 """
-Generate per-nanobody YAML input files for boltzgen scoring against P05231.
+Generate per-nanobody YAML input files for boltzgen scoring against P20809.
 
 Input file formats supported:
   - FASTA  (.fasta / .fa)  — headers used as IDs, e.g. >design_spec_0673|rank=4
@@ -26,27 +26,30 @@ import hashlib
 from pathlib import Path
 
 # ── Target config — mirrors nova config.yaml protein_selection.nanobody ──
-# The target is now supplied as an experimental STRUCTURE, not a bare sequence:
-# boltzgen docks against 4O9H chain A coordinates instead of folding IL-6 itself,
+# The target is supplied as an experimental STRUCTURE, not a bare sequence:
+# boltzgen docks against 6O4O chain A coordinates instead of folding IL-11 itself,
 # and binding_types pins the epitope so the pose is no longer sampled freely.
 #
 # res_index / binding are 1-based POSITIONAL indices into the parsed chain
 # (see boltzgen/data/parse/schema.py::parse_range) — NOT PDB auth numbering.
-# 4O9H entity 1 has exactly 186 SEQRES residues, so 21..186 is its last 166.
-# This is why the CIF must be nova's byte-identical copy: a different file
-# shifts every index and silently targets the wrong epitope.
-TARGET_ID = "P05231"
-TARGET_CLIP_INTERVAL = (27, 212)  # kept for reference; the structure now defines the target
-STRUCTURE_ID = "4O9H"
+# 6O4O entity 1 has exactly 169 SEQRES residues, all resolved, so 2..169 drops
+# only the leading GLY expression-tag residue and leaves 168 — the same length
+# as the clip_interval [31, 199] MSA query. `binding` counts from residue 1 of
+# the full chain, independent of res_index. This is why the CIF must be nova's
+# byte-identical copy: a different file shifts every index and silently targets
+# the wrong epitope.
+TARGET_ID = "P20809"
+TARGET_CLIP_INTERVAL = (31, 199)  # kept for reference; the structure defines the target
+STRUCTURE_ID = "6O4O"
 STRUCTURE_CHAIN = "A"
-STRUCTURE_RES_INDEX = "21..186"
-STRUCTURE_BINDING_SITE = "24,77,80,82,131,184..186"
+STRUCTURE_RES_INDEX = "2..169"
+STRUCTURE_BINDING_SITE = "31..35,37..38,40,88,135..138,142"
 
 # Absolute paths: boltzgen resolves `file.path` itself, and a stale relative
 # path would previously have gone unnoticed because the MSA was never loaded.
 _REPO_ROOT = Path(__file__).resolve().parent
 # Structure + MSA from https://github.com/metanova-labs/nova (branch:
-# inference-rework-and-structure-files) — data/structures and data/msa_files.
+# atom-pair-entropy) — data/structures and data/msa_files.
 STRUCTURE_PATH = _REPO_ROOT / "data" / "structures" / f"{STRUCTURE_ID}.cif"
 MSA_PATH = _REPO_ROOT / "data" / "msa_files" / f"{TARGET_ID}.a3m"
 
@@ -177,7 +180,7 @@ def generate_yamls(sequences: list[tuple[str, str]], output_dir: str) -> None:
             f"Fetch nova's exact copy (do not substitute an RCSB download):\n"
             f"  mkdir -p {STRUCTURE_PATH.parent}\n"
             f"  curl -sSL -o {STRUCTURE_PATH} https://raw.githubusercontent.com/"
-            f"metanova-labs/nova/inference-rework-and-structure-files/"
+            f"metanova-labs/nova/atom-pair-entropy/"
             f"data/structures/{STRUCTURE_ID}.cif"
         )
     if not MSA_PATH.exists():
@@ -207,7 +210,7 @@ def generate_yamls(sequences: list[tuple[str, str]], output_dir: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate boltzgen scoring YAML files for nanobody sequences against P05231."
+        description="Generate boltzgen scoring YAML files for nanobody sequences against P20809."
     )
     parser.add_argument(
         "--input", "-i",
