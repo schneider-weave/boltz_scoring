@@ -1,31 +1,31 @@
-# Nanobody Scoring against P05231
+# Nanobody Scoring against P20809
 
 Target setup matches the validator in [metanova-labs/nova](https://github.com/metanova-labs/nova)
-(branch `inference-rework-and-structure-files`):
+(branch `atom-pair-entropy`):
 
-- Target: `P05231` (Interleukin-6, human), clip interval `[27, 212]`
-- **Structure: `data/structures/4O9H.cif`, chain `A`, `res_index: 21..186`**
-- **Epitope: `binding: 24,77,80,82,131,184..186`**
-- MSA: `data/msa_files/P05231.a3m`
+- Target: `P20809` (Interleukin-11, human), clip interval `[31, 199]`
+- **Structure: `data/structures/6O4O.cif`, chain `A`, `res_index: 2..169`**
+- **Epitope: `binding: 31..35,37..38,40,88,135..138,142`**
+- MSA: `data/msa_files/P20809.a3m` (re-clipped to `[31, 199]` — see below)
 
-## The target is a structure now, not a sequence
+## The target is a structure, not a sequence
 
-The validator no longer passes IL-6 as a bare sequence. It passes **experimental
+The validator does not pass IL-11 as a bare sequence. It passes **experimental
 coordinates plus an explicit epitope**:
 
 ```yaml
 entities:
 - file:
-    path: data/structures/4O9H.cif
+    path: data/structures/6O4O.cif
     include:
         - chain:
             id: A
-            res_index: 21..186
-            msa: data/msa_files/P05231.a3m
+            res_index: 2..169
+            msa: data/msa_files/P20809.a3m
     binding_types:
         - chain:
             id: A
-            binding: 24,77,80,82,131,184..186
+            binding: 31..35,37..38,40,88,135..138,142
 - protein:
     id: B
     sequence: "<design>"
@@ -36,32 +36,49 @@ entities:
 
 Two consequences:
 
-1. **boltzgen no longer folds IL-6** — it docks against the 4O9H backbone.
-2. **`binding_types` pins where the nanobody binds.** Previously nothing did, so
-   the diffusion sampler chose a different epitope on every draw. That produced
-   swings of ~0.3 in `design_to_target_iptm` on *identical* input, which is what
-   made local scores look unrelated to the validator's.
+1. **boltzgen does not fold IL-11** — it docks against the 6O4O backbone.
+2. **`binding_types` pins where the nanobody binds.** Without it the diffusion
+   sampler chose a different epitope on every draw, producing swings of ~0.3 in
+   `design_to_target_iptm` on *identical* input — which is what made local scores
+   look unrelated to the validator's.
 
-4O9H is IL-6 bound to an antibody Fab (chain A is IL-6; H/L are the Fab). The
-listed residues are that antibody's epitope — designs are judged on hitting
-**that** site, so designs screened before this change are not comparable.
+6O4O is unliganded IL-11 (Metcalfe & Griffin, JBC 2020) — chain A is the only
+polymer; the other entities are sulfate, chloride and water. So unlike the
+previous 4O9H target, the epitope is **not** read off a co-crystal partner: nova
+picks those residues, and designs are judged on hitting that site.
 
 > **Use nova's exact CIF.** `res_index` and `binding` are 1-based *positional*
 > indices into the parsed chain (`boltzgen/data/parse/schema.py::parse_range`),
-> **not** PDB author numbering. 4O9H entity 1 has exactly 186 SEQRES residues, so
-> `21..186` is its last 166. A different copy of the structure shifts every index
-> and silently targets the wrong site.
+> **not** PDB author numbering (6O4O chain A is authored `10..178`). 6O4O entity 1
+> has exactly 169 SEQRES residues and all of them are resolved, so `2..169` drops
+> only the leading `GLY` expression-tag residue and leaves 168 — matching the
+> 168-residue clipped MSA query exactly. `binding` is counted from residue 1 of
+> the **full** chain, independent of `res_index`, so the epitope is
+> `R40 D41 K42 F43 P44 / D46 G47 / H49 / S97 / S144 S145 A146 W147 / R151` in
+> author numbering. A different copy of the structure shifts every index and
+> silently targets the wrong site.
 >
 > ```bash
 > mkdir -p data/structures
-> curl -sSL -o data/structures/4O9H.cif \
->   https://raw.githubusercontent.com/metanova-labs/nova/inference-rework-and-structure-files/data/structures/4O9H.cif
+> curl -sSL -o data/structures/6O4O.cif \
+>   https://raw.githubusercontent.com/metanova-labs/nova/atom-pair-entropy/data/structures/6O4O.cif
 > ```
 
-Note the `.a3m` is carried for parity only: both this pipeline and the validator
-build `Input(msa={})`, so the MSA never reaches the model and cannot move scores.
+The `.a3m` also changed with this target: the clip moved `[21, 199]` → `[31, 199]`,
+so the query line lost its N-terminal `PGPPPGPPRV` and is now 168 residues. Refetch
+it from the same branch:
 
-Regenerate scoring inputs after every target change; previously generated YAMLs retain the old target.
+```bash
+curl -sSL -o data/msa_files/P20809.a3m \
+  https://raw.githubusercontent.com/metanova-labs/nova/atom-pair-entropy/data/msa_files/P20809.a3m
+```
+
+That said, the `.a3m` is carried for parity only: both this pipeline and the
+validator build `Input(msa={})`, so the MSA never reaches the model and cannot
+move scores.
+
+Regenerate scoring inputs after every target change; previously generated YAMLs
+retain the old target, and designs screened against 4O9H/IL-6 are not comparable.
 
 ## 1. Environment Setup
 
@@ -96,7 +113,7 @@ cd boltzgen && pip install -e . && cd ..
 
 ## 2. Generate YAML input files from filter_passed.fasta
 
-Requires `data/structures/4O9H.cif` to be present (see the curl command at the top);
+Requires `data/structures/6O4O.cif` to be present (see the curl command at the top);
 the generator refuses to run without it, since a missing structure now means no
 target at all rather than an unused file.
 
